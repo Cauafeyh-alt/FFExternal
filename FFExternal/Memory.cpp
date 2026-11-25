@@ -1,3 +1,4 @@
+#include "hack.hpp" // <--- ESSA LINHA ESTAVA FALTANDO
 #include <mach/mach.h>
 #include <mach/vm_map.h>
 #include <sys/sysctl.h>
@@ -134,7 +135,6 @@ uintptr_t FindStaticMatchGame() {
 
     uintptr_t string_addr = 0;
 
-    // 1. Acha a string "GameFacade" na memoria
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
@@ -165,7 +165,6 @@ uintptr_t FindStaticMatchGame() {
         return 0;
     }
 
-    // 2. Acha o ponteiro que aponta pra string (Il2CppClass)
     uintptr_t class_ptr = 0;
     address = g_UnityBase;
     while (true) {
@@ -180,7 +179,7 @@ uintptr_t FindStaticMatchGame() {
                     if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
                         for (vm_size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
                             if (buffer[i] == string_addr) {
-                                class_ptr = address + (i * sizeof(uintptr_t)) - 0x10; // Offset do nome no Il2CppClass
+                                class_ptr = address + (i * sizeof(uintptr_t)) - 0x10;
                                 break;
                             }
                         }
@@ -198,14 +197,12 @@ uintptr_t FindStaticMatchGame() {
         return 0;
     }
 
-    // 3. Le o static_fields (offset 0xB8 no iOS arm64)
     uintptr_t static_fields = ReadMemory<uintptr_t>(class_ptr + 0xB8);
     if (static_fields == 0) {
         Log("[-] static_fields NULL.");
         return 0;
     }
 
-    // 4. Le o MatchGame (offset 0x8)
     uintptr_t matchGame = ReadMemory<uintptr_t>(static_fields + 0x8);
     Log("[+] GameFacade encontrado! MatchGame: 0x" + std::to_string(matchGame));
     return matchGame;
