@@ -2,7 +2,37 @@
 #include <thread>
 #include <chrono>
 
-enum MonoOrStereoscopicEye : int { Left = 0, Right = 1, Both = 2 };
+Vector3 GetEntityPosition(uintptr_t player) {
+    uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
+    if (!trans) return {0, 0, 0};
+    return ReadMemory<Vector3>(trans + 0x90); 
+}
+
+Matrix4x4 GetViewMatrix() {
+    Matrix4x4 mat = {};
+    if (g_GameCamera == 0) return mat;
+    return ReadMemory<Matrix4x4>(g_GameCamera + Offsets::Camera_ViewMatrix);
+}
+
+bool WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, int height) {
+    Vector4 clipCoords;
+    clipCoords.x = pos.x * matrix.m[0][0] + pos.y * matrix.m[1][0] + pos.z * matrix.m[2][0] + matrix.m[3][0];
+    clipCoords.y = pos.x * matrix.m[0][1] + pos.y * matrix.m[1][1] + pos.z * matrix.m[2][1] + matrix.m[3][1];
+    clipCoords.z = pos.x * matrix.m[0][2] + pos.y * matrix.m[1][2] + pos.z * matrix.m[2][2] + matrix.m[3][2];
+    clipCoords.w = pos.x * matrix.m[0][3] + pos.y * matrix.m[1][3] + pos.z * matrix.m[2][3] + matrix.m[3][3];
+
+    if (clipCoords.w < 0.1f) return false;
+
+    Vector3 NDC;
+    NDC.x = clipCoords.x / clipCoords.w;
+    NDC.y = clipCoords.y / clipCoords.w;
+    NDC.z = clipCoords.z / clipCoords.w;
+
+    // iOS screen dimensions
+    screen.x = (width / 2.0f) * (NDC.x + 1.0f);
+    screen.y = (height / 2.0f) * (1.0f - NDC.y); 
+    return true;
+}
 
 void EspThread() {
     while (g_Running) {
@@ -11,23 +41,17 @@ void EspThread() {
             continue;
         }
 
-        using W2SFn = Vector3(*)(uintptr_t, Vector3, MonoOrStereoscopicEye);
-        uintptr_t addrW2S = g_UnityBase + Offsets::Camera_WorldToScreen_RVA;
-
-        using GetPosFn = Vector3(*)(uintptr_t);
-        uintptr_t addrGetPos = g_UnityBase + Offsets::Entity_GetPosition_RVA;
-
-        using IsDeadFn = bool(*)(uintptr_t);
-        uintptr_t addrIsDead = g_UnityBase + Offsets::Player_IsDead_RVA;
+        Matrix4x4 viewMatrix = GetViewMatrix();
+        if (viewMatrix.m[0][0] == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
 
         std::vector<EspEntity> tempEntities;
 
         std::lock_guard<std::mutex> lk(g_PlayerMutex);
         for (uintptr_t p : g_Players) {
             if (p == g_LocalPlayer) continue;
-            
-            bool dead = SafeCall<bool, IsDeadFn>(addrIsDead, p);
-            if (dead) continue;
 
             bool isBot = ReadMemory<bool>(p + Offsets::Player_IsClientBot);
             if (isBot) continue;
@@ -36,19 +60,20 @@ void EspThread() {
             uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
             if (myTeam == enemyTeam) continue;
 
-            Vector3 pos = SafeCall<Vector3, GetPosFn>(addrGetPos, p);
+            Vector3 pos = GetEntityPosition(p);
             if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
             
             Vector3 headWorld = pos; headWorld.y += 1.65f;
             Vector3 footWorld = pos;
 
-            Vector3 headScreen = SafeCall<Vector3, W2SFn>(addrW2S, g_GameCamera, headWorld, MonoOrStereoscopicEye::Left);
-            Vector3 footScreen = SafeCall<Vector3, W2SFn>(addrW2S, g_GameCamera, footWorld, MonoOrStereoscopicEye::Left);
-
-            if (headScreen.z > 0.0f && footScreen.z > 0.0f) {
+            Vector2 headScreen, footScreen;
+            // Assumindo iPhone 14 Pro Max (430x932) ou parecido, pode ajustar depois
+            if (WorldToScreen(headWorld, headScreen, viewMatrix, 430, 932) && 
+                WorldToScreen(footWorld, footScreen, viewMatrix, 430, 932)) {
+                
                 EspEntity e;
-                e.headPos = {headScreen.x, headScreen.y};
-                e.footPos = {footScreen.x, footScreen.y};
+                e.headPos = headScreen;
+                e.footPos = footScreen;
                 e.health = ReadMemory<int>(p + Offsets::Player_HP_Candidate);
                 tempEntities.push_back(e);
             }
