@@ -1,88 +1,62 @@
 #include "hack.hpp"
-#include <chrono>
 #include <thread>
-#include <algorithm>
+#include <chrono>
+#include <UIKit/UIKit.h>
 
-struct BoxRect { float x, y, w, h; };
+template <typename T> T ReadMemory(uintptr_t address);
 
-// Como não temos a matriz da câmera ainda, vamos desenhar um ponto
-// no centro do inimigo baseado em cálculos aproximados de tela.
-// (O ideal é achar o ViewMatrix no dump depois).
-static bool WorldToScreenApprox(const Vector3& world, const Vector3& local, Vector2& screen) {
-    // Matemática fake só pra ver o ESP funcionando
-    float dx = world.x - local.x;
-    float dy = world.y - local.y;
-    
-    // Assume tela 1080x1920 e FOV de 90
-    float screenX = (dx / 10.0f) * 1080 + 540;
-    float screenY = (dy / 10.0f) * 1920 + 960;
-    
-    screen.x = screenX;
-    screen.y = screenY;
-    return true;
-}
-
-static bool GetBoxRect(uintptr_t player, uintptr_t localPlayer, BoxRect& out) {
-    using GetPosFn = Vector3(*)(uintptr_t);
-    auto getPos = reinterpret_cast<GetPosFn>(g_UnityBase + Offsets::Entity_GetPosition_RVA);
-    
-    Vector3 pos = getPos(player);
-    Vector3 localPos = getPos(localPlayer);
-    
-    Vector2 screen;
-    if (!WorldToScreenApprox(pos, localPos, screen)) return false;
-    
-    out.w = 50.0f; 
-    out.h = 100.0f;
-    out.x = screen.x - (out.w / 2);
-    out.y = screen.y - out.h;
-    return true;
-}
-
-struct EspEntity {
-    BoxRect box;
-    float health;
-    float maxHealth;
-    float distance;
-};
-
-inline std::vector<EspEntity> g_EspEntities;
-inline std::mutex g_EspMutex;
+enum MonoOrStereoscopicEye : int { Left = 0, Right = 1, Both = 2 };
 
 void EspThread() {
     while (g_Running) {
-        if (!g_Config.espEnabled) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (!g_Config.espEnabled || g_GameCamera == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
         }
-        
-        std::vector<EspEntity> tmp;
-        {
-            std::lock_guard<std::mutex> lk(g_PlayerMutex);
-            
-            using GetPosFn = Vector3(*)(uintptr_t);
-            auto getPos = reinterpret_cast<GetPosFn>(g_UnityBase + Offsets::Entity_GetPosition_RVA);
-            Vector3 localPos = getPos(g_LocalPlayer);
 
-            for (uintptr_t p : g_Players) {
-                if (p == g_LocalPlayer) continue;
-                
-                EspEntity e{};
-                if (!GetBoxRect(p, g_LocalPlayer, e.box)) continue;
-                
-                Vector3 enemyPos = getPos(p);
-                e.distance = (enemyPos - localPos).Length();
-                
-                // Vida chumbada até achar o offset
-                e.health = 100.0f; 
-                e.maxHealth = 100.0f;
-                tmp.push_back(e);
+        using W2SFn = Vector3(*)(uintptr_t, Vector3, MonoOrStereoscopicEye);
+        auto w2s = reinterpret_cast<W2SFn>(g_UnityBase + Offsets::Camera_WorldToScreen_RVA);
+
+        using GetPosFn = Vector3(*)(uintptr_t);
+        auto getPos = reinterpret_cast<GetPosFn>(g_UnityBase + Offsets::Entity_GetPosition_RVA);
+
+        using IsDeadFn = bool(*)(uintptr_t);
+        auto isDead = reinterpret_cast<IsDeadFn>(g_UnityBase + Offsets::Player_IsDead_RVA);
+
+        std::vector<EspEntity> tempEntities;
+
+        std::lock_guard<std::mutex> lk(g_PlayerMutex);
+        for (uintptr_t p : g_Players) {
+            if (p == g_LocalPlayer) continue;
+            if (isDead(p)) continue;
+
+            bool isBot = ReadMemory<bool>(p + Offsets::Player_IsClientBot);
+            if (isBot) continue;
+            
+            uintptr_t myTeam = ReadMemory<uintptr_t>(g_LocalPlayer + Offsets::Player_TeamModeID);
+            uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
+            if (myTeam == enemyTeam) continue;
+
+            Vector3 pos = getPos(p);
+            
+            Vector3 headWorld = pos; headWorld.y += 1.65f;
+            Vector3 footWorld = pos;
+
+            Vector3 headScreen = w2s(g_GameCamera, headWorld, MonoOrStereoscopicEye::Left);
+            Vector3 footScreen = w2s(g_GameCamera, footWorld, MonoOrStereoscopicEye::Left);
+
+            if (headScreen.z > 0.0f && footScreen.z > 0.0f) {
+                EspEntity e;
+                e.headPos = {headScreen.x, headScreen.y};
+                e.footPos = {footScreen.x, footScreen.y};
+                e.health = ReadMemory<int>(p + Offsets::Player_HP_Candidate);
+                tempEntities.push_back(e);
             }
         }
-        {
-            std::lock_guard<std::mutex> lk(g_EspMutex);
-            g_EspEntities = std::move(tmp);
-        }
+
+        std::lock_guard<std::mutex> espLk(g_EspMutex);
+        g_EspEntities = std::move(tempEntities);
+
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
