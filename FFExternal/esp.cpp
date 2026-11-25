@@ -12,20 +12,22 @@ void EspThread() {
         }
 
         using W2SFn = Vector3(*)(uintptr_t, Vector3, MonoOrStereoscopicEye);
-        auto w2s = reinterpret_cast<W2SFn>(g_UnityBase + Offsets::Camera_WorldToScreen_RVA);
+        uintptr_t addrW2S = g_UnityBase + Offsets::Camera_WorldToScreen_RVA;
 
         using GetPosFn = Vector3(*)(uintptr_t);
-        auto getPos = reinterpret_cast<GetPosFn>(g_UnityBase + Offsets::Entity_GetPosition_RVA);
+        uintptr_t addrGetPos = g_UnityBase + Offsets::Entity_GetPosition_RVA;
 
         using IsDeadFn = bool(*)(uintptr_t);
-        auto isDead = reinterpret_cast<IsDeadFn>(g_UnityBase + Offsets::Player_IsDead_RVA);
+        uintptr_t addrIsDead = g_UnityBase + Offsets::Player_IsDead_RVA;
 
         std::vector<EspEntity> tempEntities;
 
         std::lock_guard<std::mutex> lk(g_PlayerMutex);
         for (uintptr_t p : g_Players) {
             if (p == g_LocalPlayer) continue;
-            if (isDead(p)) continue;
+            
+            bool dead = SafeCall<bool, IsDeadFn>(addrIsDead, p);
+            if (dead) continue;
 
             bool isBot = ReadMemory<bool>(p + Offsets::Player_IsClientBot);
             if (isBot) continue;
@@ -34,14 +36,14 @@ void EspThread() {
             uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
             if (myTeam == enemyTeam) continue;
 
-            Vector3 pos = getPos(p);
+            Vector3 pos = SafeCall<Vector3, GetPosFn>(addrGetPos, p);
             if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
             
             Vector3 headWorld = pos; headWorld.y += 1.65f;
             Vector3 footWorld = pos;
 
-            Vector3 headScreen = w2s(g_GameCamera, headWorld, MonoOrStereoscopicEye::Left);
-            Vector3 footScreen = w2s(g_GameCamera, footWorld, MonoOrStereoscopicEye::Left);
+            Vector3 headScreen = SafeCall<Vector3, W2SFn>(addrW2S, g_GameCamera, headWorld, MonoOrStereoscopicEye::Left);
+            Vector3 footScreen = SafeCall<Vector3, W2SFn>(addrW2S, g_GameCamera, footWorld, MonoOrStereoscopicEye::Left);
 
             if (headScreen.z > 0.0f && footScreen.z > 0.0f) {
                 EspEntity e;
