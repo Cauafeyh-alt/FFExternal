@@ -3,9 +3,6 @@
 #include <chrono>
 #include <cmath>
 
-template <typename T> T ReadMemory(uintptr_t address);
-template <typename T> void WriteMemory(uintptr_t address, T data);
-
 Quaternion EulerToQuaternion(float pitch, float yaw, float roll) {
     float cx = cos(pitch * 0.5f * M_PI / 180.0f);
     float sx = sin(pitch * 0.5f * M_PI / 180.0f);
