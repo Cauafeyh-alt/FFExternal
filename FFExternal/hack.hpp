@@ -5,7 +5,43 @@
 #include <mutex>
 #include <string>
 #include <mach/mach.h>
+#include <signal.h>
+#include <setjmp.h>
 #include "offset.hpp"
+
+void Log(const std::string& msg);
+
+static sigjmp_buf jump_buffer;
+static void segv_handler(int sig) {
+    siglongjmp(jump_buffer, 1);
+}
+
+// SafeCall: executa a RVA, se der crash, volta e retorna 0
+template <typename Ret, typename Func, typename... Args>
+Ret SafeCall(uintptr_t address, Args... args) {
+    if (address == 0) return Ret{};
+    
+    struct sigaction sa, old_segv, old_bus;
+    sa.sa_handler = segv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_NODEFER;
+    
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGBUS, &sa, &old_bus);
+    
+    Ret result{};
+    if (sigsetjmp(jump_buffer, 1) == 0) {
+        auto func = reinterpret_cast<Func>(address);
+        result = func(args...);
+    } else {
+        Log("[-] CRASH na RVA: 0x" + std::to_string(address));
+    }
+    
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGBUS, &old_bus, NULL);
+    
+    return result;
+}
 
 struct Vector2 { float x, y; };
 struct Vector3 {
@@ -68,7 +104,6 @@ void WriteMemory(uintptr_t address, T data) {
 
 mach_port_t get_task_port(const char* process_name);
 uintptr_t GetUnityBase();
-void Log(const std::string& msg);
 
 void HackLoop();
 void AimbotThread();
