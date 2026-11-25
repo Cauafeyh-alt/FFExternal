@@ -33,7 +33,7 @@ struct Config {
 };
 
 inline Config g_Config;
-inline uintptr_t g_UnityBase = 0;
+// A variável g_UnityBase está no offset.hpp, não precisa repetir aqui.
 inline uintptr_t g_LocalPlayer = 0;
 inline std::vector<uintptr_t> g_Players;
 inline bool g_Running = true;
