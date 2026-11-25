@@ -1,7 +1,6 @@
 #include "hack.hpp"
 #include <thread>
 #include <chrono>
-#include <UIKit/UIKit.h>
 
 template <typename T> T ReadMemory(uintptr_t address);
 
