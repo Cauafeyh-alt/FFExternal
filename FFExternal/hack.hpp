@@ -14,9 +14,9 @@ struct Vector3 {
     Vector3 operator*(float s) const { return {x*s, y*s, z*s}; }
     float Length() const { return std::sqrt(x*x + y*y + z*z); }
 };
+struct Quaternion { float x, y, z, w; };
 
 struct Config {
-    // Aimbot
     bool aimbotEnabled = false;
     bool aimHead = true;
     bool aimNeck = false;
@@ -25,7 +25,6 @@ struct Config {
     float aimRange = 500.0f;
     bool drawFOV = false;
 
-    // ESP
     bool espEnabled = false;
     bool espBox = true;
     bool espHealth = true;
@@ -33,10 +32,24 @@ struct Config {
 };
 
 inline Config g_Config;
-// A variável g_UnityBase está no offset.hpp, não precisa repetir aqui.
 inline uintptr_t g_LocalPlayer = 0;
 inline std::vector<uintptr_t> g_Players;
 inline bool g_Running = true;
 inline std::mutex g_PlayerMutex;
 
 extern mach_port_t g_TaskPort;
+extern uintptr_t g_UnityBase;
+extern uintptr_t g_GameCamera;
+
+struct EspEntity {
+    Vector2 headPos;
+    Vector2 footPos;
+    float health;
+    float distance;
+};
+inline std::vector<EspEntity> g_EspEntities;
+inline std::mutex g_EspMutex;
+
+void HackLoop();
+void AimbotThread();
+void EspThread();
