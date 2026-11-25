@@ -17,10 +17,10 @@ bool g_ESP = false;
 bool g_ESPBox = true;
 bool g_ESPHealth = true;
 bool g_DrawFOV = false;
-float g_AimFOV = 120.0f; // Padrão
+float g_AimFOV = 120.0f;
 bool g_Running = true;
 
-// --- View do Overlay (Desenho) ---
+// --- View do Overlay (Desenho do FOV) ---
 @interface OverlayView : UIView
 @end
 
@@ -29,7 +29,7 @@ bool g_Running = true;
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = [UIColor clearColor];
-        self.userInteractionEnabled = YES;
+        self.userInteractionEnabled = NO; // Importante: deixa o toque passar
         self.opaque = NO;
     }
     return self;
@@ -44,18 +44,11 @@ bool g_Running = true;
 
     // Desenha o Círculo do FOV
     if (g_DrawFOV) {
-        CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5); // Branco translúcido
+        CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
         CGContextSetLineWidth(ctx, 1.5);
-        // O raio do círculo é baseado no g_AimFOV
         CGContextAddArc(ctx, cx, cy, g_AimFOV, 0, 2 * M_PI, 0);
         CGContextStrokePath(ctx);
     }
-
-    // TODO: Desenhar ESP aqui (pega os dados da memória e desenha caixas)
-}
-
-- (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    // Permite arrastar o menu se necessário
 }
 @end
 
@@ -68,7 +61,7 @@ bool g_Running = true;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.08 alpha:0.9];
+    self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.08 alpha:1.0];
     
     UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
     scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, 800);
@@ -204,7 +197,7 @@ bool g_Running = true;
 }
 @end
 
-// --- AppDelegate (Gerencia a Janela Flutuante) ---
+// --- AppDelegate (Inicializa as Janelas) ---
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
@@ -218,9 +211,9 @@ bool g_Running = true;
     self.window.rootViewController = [[ViewController alloc] init];
     [self.window makeKeyAndVisible];
     
-    // 2. Janela Flutuante (O Overlay Transparente)
+    // 2. Janela Flutuante (O Overlay Transparente por cima)
     self.overlayWindow = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-    self.overlayWindow.windowLevel = UIWindowLevelAlert + 1; // Fica por cima
+    self.overlayWindow.windowLevel = UIWindowLevelAlert + 1;
     self.overlayWindow.backgroundColor = [UIColor clearColor];
     self.overlayWindow.rootViewController = [[UIViewController alloc] init];
     self.overlayWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
@@ -228,14 +221,17 @@ bool g_Running = true;
     OverlayView *overlay = [[OverlayView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     [self.overlayWindow.rootViewController.view addSubview:overlay];
     self.overlayWindow.hidden = NO;
+    
+    // 🔥 A LINHA MÁGICA: Permite que os toques no menu funcionem
+    self.overlayWindow.userInteractionEnabled = NO;
 
-    // Loop pra forçar o desenho do FOV
+    // Loop pra desenhar o FOV 60 vezes por segundo
     NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
         [overlay setNeedsDisplay];
     }];
     [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
 
-    // Configura áudio em background
+    // Mantém o app vivo em background
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
     [session setActive:YES error:nil];
@@ -244,7 +240,7 @@ bool g_Running = true;
 }
 @end
 
-// --- Função Main ---
+// --- Função Main (Obrigatória) ---
 int main(int argc, char * argv[]) {
     @autoreleasepool {
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
