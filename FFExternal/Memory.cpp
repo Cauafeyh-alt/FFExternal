@@ -122,9 +122,10 @@ uintptr_t GetUnityBase() {
     return 0;
 }
 
+// Pattern Scan Otimizado
 uintptr_t FindStaticMatchGame() {
     if (g_TaskPort == MACH_PORT_NULL || g_UnityBase == 0) return 0;
-    Log("[*] Procurando GameFacade class...");
+    Log("[*] Iniciando Pattern Scan (GameFacade)...");
 
     vm_address_t address = g_UnityBase;
     vm_size_t size = 0;
@@ -133,31 +134,38 @@ uintptr_t FindStaticMatchGame() {
     mach_msg_type_number_t count;
 
     uintptr_t string_addr = 0;
+    int regiao_idx = 0;
 
-    // 1. Acha a string "GameFacade" ou "COW.GameFacade"
+    // 1. Busca a string "GameFacade" em chunks de 4MB
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
         if (info.is_submap) { depth++; }
         else {
             if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
-                char* buffer = (char*)malloc(size);
+                vm_size_t chunk_size = 4 * 1024 * 1024; // 4MB
+                char* buffer = (char*)malloc(chunk_size);
                 if (buffer) {
-                    vm_size_t readSize = size;
-                    if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                        for (vm_size_t i = 0; i < readSize - 15; i++) {
-                            if (memcmp(buffer + i, "GameFacade", 10) == 0 && buffer[i+10] == '\0') {
-                                string_addr = address + i;
-                                break;
-                            }
-                            if (memcmp(buffer + i, "COW.GameFacade", 14) == 0 && buffer[i+14] == '\0') {
-                                string_addr = address + i;
-                                break;
+                    for (vm_address_t chunk_addr = address; chunk_addr < address + size; chunk_addr += chunk_size) {
+                        vm_size_t readSize = (address + size - chunk_addr > chunk_size) ? chunk_size : (address + size - chunk_addr);
+                        if (vm_read_overwrite(g_TaskPort, chunk_addr, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
+                            for (vm_size_t i = 0; i < readSize - 15; i++) {
+                                if (memcmp(buffer + i, "GameFacade", 10) == 0 && buffer[i+10] == '\0') {
+                                    string_addr = chunk_addr + i;
+                                    break;
+                                }
+                                if (memcmp(buffer + i, "COW.GameFacade", 14) == 0 && buffer[i+14] == '\0') {
+                                    string_addr = chunk_addr + i;
+                                    break;
+                                }
                             }
                         }
+                        if (string_addr != 0) break;
                     }
                     free(buffer);
                 }
+                regiao_idx++;
+                if (regiao_idx % 200 == 0) Log("[*] Regiao lida: " + std::to_string(regiao_idx));
             }
         }
         if (string_addr != 0) break;
@@ -170,9 +178,10 @@ uintptr_t FindStaticMatchGame() {
     }
     Log("[+] String GameFacade encontrada em: 0x" + std::to_string(string_addr));
 
-    // 2. Acha o ponteiro pra string e calcula o Il2CppClass
+    // 2. Acha o ponteiro pra string (Il2CppClass)
     uintptr_t class_ptr = 0;
     address = g_UnityBase;
+    
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
@@ -185,7 +194,7 @@ uintptr_t FindStaticMatchGame() {
                     if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
                         for (vm_size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
                             if (buffer[i] == string_addr) {
-                                // Ajuste: O offset do nome no Il2CppClass (arm64) é 0x10
+                                // No iOS arm64, o offset do name na Il2CppClass é 0x10
                                 class_ptr = address + (i * sizeof(uintptr_t)) - 0x10;
                                 break;
                             }
@@ -205,7 +214,7 @@ uintptr_t FindStaticMatchGame() {
     }
     Log("[+] Il2CppClass encontrado em: 0x" + std::to_string(class_ptr));
 
-    // 3. Le o static_fields (offset 0xB8 no iOS arm64)
+    // 3. Le static_fields
     uintptr_t static_fields = ReadMemory<uintptr_t>(class_ptr + 0xB8);
     if (static_fields == 0) {
         Log("[-] static_fields NULL.");
@@ -213,7 +222,7 @@ uintptr_t FindStaticMatchGame() {
     }
     Log("[+] static_fields encontrado em: 0x" + std::to_string(static_fields));
 
-    // 4. Le o MatchGame (offset 0x8)
+    // 4. Le MatchGame
     uintptr_t matchGame = ReadMemory<uintptr_t>(static_fields + 0x8);
     if (matchGame == 0) {
         Log("[-] MatchGame NULL (Fora de partida?).");
