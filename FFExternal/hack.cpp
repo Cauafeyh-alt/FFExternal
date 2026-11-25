@@ -3,9 +3,6 @@
 #include <chrono>
 #include <string>
 
-extern uintptr_t GetUnityBase();
-extern void Log(const std::string& msg);
-
 void HackLoop() {
     Log("=== HackLoop Iniciado ===");
     g_DebugInfo = "Status: Iniciando Threads...";
@@ -31,7 +28,6 @@ void HackLoop() {
             }
         }
 
-        // Testando as RVAs do GameFacade
         using GetLocalPlayerFn = uintptr_t(*)();
         auto getLocalPlayer = reinterpret_cast<GetLocalPlayerFn>(g_UnityBase + Offsets::GF_CurrentLocalPlayer);
         g_LocalPlayer = getLocalPlayer();
@@ -66,7 +62,6 @@ void HackLoop() {
                 std::string logStr = "Match: " + std::to_string(match) + " | List: " + std::to_string(playerList) + " | Count: " + std::to_string(playerCount);
                 g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
                 
-                // Loga 1 vez a cada 5 segundos pra n floodar
                 static auto lastLog = std::chrono::steady_clock::now();
                 if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - lastLog).count() > 5) {
                     Log(logStr);
