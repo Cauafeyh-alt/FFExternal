@@ -76,6 +76,7 @@ uintptr_t GetUnityBase() {
     natural_t depth = 0;
     struct vm_region_submap_info_64 info;
     mach_msg_type_number_t count;
+    int regions_scanned = 0;
 
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
@@ -85,15 +86,26 @@ uintptr_t GetUnityBase() {
         if (info.is_submap) {
             depth++;
         } else {
-            uint32_t magic = 0;
-            vm_size_t readSize = sizeof(magic);
-            if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)&magic, &readSize) == KERN_SUCCESS) {
-                if (magic == MH_MAGIC_64) {
-                    char path[256] = {0};
-                    if (vm_read_overwrite(g_TaskPort, address + 8, 256, (vm_address_t)path, &readSize) == KERN_SUCCESS) {
-                        if (strstr(path, "UnityFramework") != NULL) {
-                            Log("[+] UnityFramework encontrado em: " + std::to_string(address));
-                            return address;
+            regions_scanned++;
+            // Checa se a região é legível (Mach-O header fica numa região r-x ou r--)
+            if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
+                uint32_t magic = 0;
+                vm_size_t readSize = sizeof(magic);
+                if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)&magic, &readSize) == KERN_SUCCESS) {
+                    // Achou o header 64-bit
+                    if (magic == MH_MAGIC_64) {
+                        // Lê os primeiros 16KB pra achar o nome do framework nos load commands
+                        char *buffer = (char *)malloc(0x4000);
+                        if (buffer) {
+                            readSize = 0x4000;
+                            if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
+                                if (strstr(buffer, "UnityFramework") != NULL) {
+                                    free(buffer);
+                                    Log("[+] UnityFramework encontrado em: 0x" + std::to_string(address) + " apos " + std::to_string(regions_scanned) + " regioes.");
+                                    return address;
+                                }
+                            }
+                            free(buffer);
                         }
                     }
                 }
@@ -101,6 +113,6 @@ uintptr_t GetUnityBase() {
         }
         address += size;
     }
-    Log("[-] UnityFramework NAO encontrado.");
+    Log("[-] UnityFramework NAO encontrado apos " + std::to_string(regions_scanned) + " regioes.");
     return 0;
 }
