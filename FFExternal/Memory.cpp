@@ -9,6 +9,7 @@
 
 mach_port_t g_TaskPort = MACH_PORT_NULL;
 uintptr_t g_UnityBase = 0;
+uintptr_t g_GameCamera = 0; // <--- DEFINIDO AQUI
 
 mach_port_t get_task_port(const char* process_name) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
@@ -53,9 +54,7 @@ uintptr_t GetUnityBase() {
 
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
-        // AQUI: trocado para vm_region_recurse_64 e tipos vm_address_t
         kern_return_t kr = vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count);
-        
         if (kr != KERN_SUCCESS) break;
 
         if (info.is_submap) {
@@ -77,20 +76,4 @@ uintptr_t GetUnityBase() {
         address += size;
     }
     return 0;
-}
-
-template <typename T>
-T ReadMemory(uintptr_t address) {
-    T data;
-    vm_size_t size = sizeof(T);
-    if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
-        return T();
-    }
-    return data;
-}
-
-template <typename T>
-void WriteMemory(uintptr_t address, T data) {
-    vm_size_t size = sizeof(T);
-    vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
 }
