@@ -3,13 +3,6 @@
 #include <chrono>
 #include <cmath>
 
-Vector3 GetEntityPosition(uintptr_t player) {
-    uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
-    if (!trans) return {0, 0, 0};
-    // O offset da posicao no Transform no Unity iOS eh geralmente 0x90
-    return ReadMemory<Vector3>(trans + 0x90); 
-}
-
 Quaternion EulerToQuaternion(float pitch, float yaw, float roll) {
     float cx = cos(pitch * 0.5f * M_PI / 180.0f);
     float sx = sin(pitch * 0.5f * M_PI / 180.0f);
@@ -41,9 +34,6 @@ void AimbotThread() {
         std::lock_guard<std::mutex> lk(g_PlayerMutex);
         for (uintptr_t p : g_Players) {
             if (p == g_LocalPlayer) continue;
-            
-            // Como nao podemos chamar o isDead RVA, lemos o HP ou uma flag direta se tivermos.
-            // Vamos pular o isDead por enquanto e confiar no filtro de HP.
             
             bool isBot = ReadMemory<bool>(p + Offsets::Player_IsClientBot);
             if (isBot) continue;
