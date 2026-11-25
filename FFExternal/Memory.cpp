@@ -1,4 +1,4 @@
-#include "hack.hpp" // <--- ESSA LINHA ESTAVA FALTANDO
+#include "hack.hpp"
 #include <mach/mach.h>
 #include <mach/vm_map.h>
 #include <sys/sysctl.h>
@@ -10,9 +10,10 @@
 #include <string>
 
 mach_port_t g_TaskPort = MACH_PORT_NULL;
-uintptr_t g_UnityBase = 0;
 uintptr_t g_GameCamera = 0;
 uintptr_t g_StaticMatchGame = 0;
+
+// A LINHA g_UnityBase FOI REMOVIDA DAQUI (Ela vive no offset.hpp)
 
 char g_LogPath[512] = "";
 
