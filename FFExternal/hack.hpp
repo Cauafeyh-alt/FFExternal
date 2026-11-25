@@ -71,7 +71,6 @@ void WriteMemory(uintptr_t address, T data) {
     vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
 }
 
-// Fica só aqui no header
 inline Vector3 GetEntityPosition(uintptr_t player) {
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
