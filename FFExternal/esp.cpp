@@ -2,13 +2,11 @@
 #include <thread>
 #include <chrono>
 
-template <typename T> T ReadMemory(uintptr_t address);
-
 enum MonoOrStereoscopicEye : int { Left = 0, Right = 1, Both = 2 };
 
 void EspThread() {
     while (g_Running) {
-        if (!g_Config.espEnabled || g_GameCamera == 0) {
+        if (!g_Config.espEnabled || g_GameCamera == 0 || g_LocalPlayer == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
         }
@@ -37,6 +35,7 @@ void EspThread() {
             if (myTeam == enemyTeam) continue;
 
             Vector3 pos = getPos(p);
+            if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue; // Falha ao ler pos
             
             Vector3 headWorld = pos; headWorld.y += 1.65f;
             Vector3 footWorld = pos;
