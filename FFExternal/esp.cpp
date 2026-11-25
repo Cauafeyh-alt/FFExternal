@@ -2,12 +2,6 @@
 #include <thread>
 #include <chrono>
 
-Vector3 GetEntityPosition(uintptr_t player) {
-    uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
-    if (!trans) return {0, 0, 0};
-    return ReadMemory<Vector3>(trans + 0x90); 
-}
-
 Matrix4x4 GetViewMatrix() {
     Matrix4x4 mat = {};
     if (g_GameCamera == 0) return mat;
@@ -28,7 +22,6 @@ bool WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, in
     NDC.y = clipCoords.y / clipCoords.w;
     NDC.z = clipCoords.z / clipCoords.w;
 
-    // iOS screen dimensions
     screen.x = (width / 2.0f) * (NDC.x + 1.0f);
     screen.y = (height / 2.0f) * (1.0f - NDC.y); 
     return true;
@@ -67,7 +60,7 @@ void EspThread() {
             Vector3 footWorld = pos;
 
             Vector2 headScreen, footScreen;
-            // Assumindo iPhone 14 Pro Max (430x932) ou parecido, pode ajustar depois
+            // Ajusta as resolucoes pro teu iPhone
             if (WorldToScreen(headWorld, headScreen, viewMatrix, 430, 932) && 
                 WorldToScreen(footWorld, footScreen, viewMatrix, 430, 932)) {
                 
