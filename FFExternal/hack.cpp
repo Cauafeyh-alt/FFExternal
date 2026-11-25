@@ -1,24 +1,37 @@
 #include "hack.hpp"
 #include <thread>
 #include <chrono>
+#include <string>
 
 extern uintptr_t GetUnityBase();
+extern void Log(const std::string& msg);
 
 void HackLoop() {
+    Log("=== HackLoop Iniciado ===");
+    g_DebugInfo = "Status: Iniciando Threads...";
+    
     while (g_Running) {
         if (g_TaskPort == MACH_PORT_NULL) {
-            g_DebugInfo = "Status: Aguardando TaskPort...";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            continue;
+            g_TaskPort = get_task_port("FreeFire");
+            if (g_TaskPort == MACH_PORT_NULL) g_TaskPort = get_task_port("UnityFramework");
+            
+            if (g_TaskPort == MACH_PORT_NULL) {
+                g_DebugInfo = "Status: TaskPort NULL (Sem permissao)";
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                continue;
+            }
         }
         
         if (g_UnityBase == 0) {
             g_UnityBase = GetUnityBase();
-            g_DebugInfo = "Status: Procurando UnityBase...";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            continue;
+            if (g_UnityBase == 0) {
+                g_DebugInfo = "Status: UnityBase nao achado";
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                continue;
+            }
         }
 
+        // Testando as RVAs do GameFacade
         using GetLocalPlayerFn = uintptr_t(*)();
         auto getLocalPlayer = reinterpret_cast<GetLocalPlayerFn>(g_UnityBase + Offsets::GF_CurrentLocalPlayer);
         g_LocalPlayer = getLocalPlayer();
@@ -49,12 +62,23 @@ void HackLoop() {
                         if (player) g_Players.push_back(player);
                     }
                 }
-                g_DebugInfo = "Match OK | Players: " + std::to_string(g_Players.size()) + "\nLocal: " + std::to_string(g_LocalPlayer);
+                
+                std::string logStr = "Match: " + std::to_string(match) + " | List: " + std::to_string(playerList) + " | Count: " + std::to_string(playerCount);
+                g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
+                
+                // Loga 1 vez a cada 5 segundos pra n floodar
+                static auto lastLog = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - lastLog).count() > 5) {
+                    Log(logStr);
+                    Log("LocalPlayer: " + std::to_string(g_LocalPlayer));
+                    Log("GameCamera: " + std::to_string(g_GameCamera));
+                    lastLog = std::chrono::steady_clock::now();
+                }
             } else {
-                g_DebugInfo = "Erro: PlayerList Null\nMatch: " + std::to_string(match);
+                g_DebugInfo = "Match OK | List NULL";
             }
         } else {
-            g_DebugInfo = "Erro: Match Null\nTask: " + std::to_string(g_TaskPort) + " | Base: " + std::to_string(g_UnityBase);
+            g_DebugInfo = "Match NULL (Aguardando partida...)";
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
