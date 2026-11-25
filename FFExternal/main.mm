@@ -129,7 +129,7 @@ extern "C" void set_log_path(const char* path);
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *documentsDirectory = [paths objectAtIndex:0];
     
-    // CORRECAO AQUI: stringWithFormat em vez de strpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63
+    // AQUI ESTA A LINHA CORRIGIDA (Linha 141)
     NSString *logPath = [NSString stringWithFormat:@"%@/ff_log.txt", documentsDirectory];
     set_log_path([logPath UTF8String]);
 
