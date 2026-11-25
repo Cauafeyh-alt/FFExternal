@@ -3,26 +3,26 @@
 
 namespace Offsets {
     // Player
-    constexpr uintptr_t Player_TeamModeID        = 0x434;    // Time do jogador
-    constexpr uintptr_t Player_IsClientBot       = 0x4A0;    // Bot check
-    constexpr uintptr_t Player_MainCameraTransform= 0x3E8;    // Transform da câmera
-    constexpr uintptr_t Player_CurrentAimRotation= 0x1A8C;   // Rotação atual
-    constexpr uintptr_t Player_IsDead_RVA        = 0x561C768; // get_IsDieing
+    constexpr uintptr_t Player_TeamModeID         = 0x434;
+    constexpr uintptr_t Player_IsClientBot        = 0x4A0;
+    constexpr uintptr_t Player_CurrentAimRotation = 0x1A8C;
+    constexpr uintptr_t Player_HP_Candidate       = 0xF40;
+    constexpr uintptr_t Player_IsDead_RVA         = 0x561C768;
 
-    // MatchGame
-    constexpr uintptr_t MatchGame_LevelObjManager= 0xB0;      // Gerenciador de Objetos (Players, Veículos, etc)
-    constexpr uintptr_t MatchGame_CameraModeMgr  = 0xA8;      // Gerenciador de Câmera
-
-    // Entity
-    constexpr uintptr_t Entity_CachedTransform    = 0x58;
-    constexpr uintptr_t Entity_GetPosition_RVA    = 0x6B49D04; // get_Position
+    // JMAGGLCNGIG
+    constexpr uintptr_t JM_PlayerList             = 0x158;
 
     // Camera
-    constexpr uintptr_t Camera_GetMain_RVA        = 0x8CFF0B4; // get_main
-    constexpr uintptr_t Camera_WorldToScreen_RVA  = 0x8CFE5C0; // WorldToScreenPoint
+    constexpr uintptr_t CameraControllerMgr_GameCamera = 0x20;
 
-    // Animator
-    constexpr uintptr_t Animator_GetBoneTrans_RVA = 0x8CDDFEC; // GetBoneTransform
+    // RVAs (GameFacade)
+    constexpr uintptr_t GF_CurrentMatch           = 0x591B898;
+    constexpr uintptr_t GF_CurrentLocalPlayer     = 0x591BD2C;
+    constexpr uintptr_t GF_CurrentCameraMgr       = 0x5927F58;
+
+    // RVAs (Funcoes Nativas)
+    constexpr uintptr_t Entity_GetPosition_RVA    = 0x6B49D04;
+    constexpr uintptr_t Camera_WorldToScreen_RVA  = 0x8CFE5C0;
 }
 
 inline uintptr_t g_UnityBase = 0;
