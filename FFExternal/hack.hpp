@@ -17,6 +17,7 @@ struct Vector3 {
     Vector3 operator*(float s) const { return {x*s, y*s, z*s}; }
     float Length() const { return std::sqrt(x*x + y*y + z*z); }
 };
+struct Vector4 { float x, y, z, w; };
 struct Quaternion { float x, y, z, w; };
 struct Matrix4x4 { float m[4][4]; };
 
@@ -44,7 +45,7 @@ inline std::string g_DebugInfo = "Aguardando...";
 extern mach_port_t g_TaskPort;
 extern uintptr_t g_UnityBase;
 extern uintptr_t g_GameCamera;
-extern uintptr_t g_StaticMatchGame; // NOVO: Ponteiro estatico da partida
+extern uintptr_t g_StaticMatchGame;
 
 struct EspEntity {
     Vector2 headPos;
