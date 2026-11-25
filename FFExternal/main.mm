@@ -2,13 +2,11 @@
 #import <AVFoundation/AVFoundation.h>
 #include <thread>
 #include <chrono>
-#include <cmath>
 #include "hack.hpp"
 
-// Puxa as funções do Memory.cpp
 extern mach_port_t get_task_port(const char* process_name);
+extern uintptr_t GetUnityBase();
 
-// --- View do Overlay (Desenho) ---
 @interface OverlayView : UIView
 @end
 
@@ -30,167 +28,84 @@ extern mach_port_t get_task_port(const char* process_name);
     float cx = rect.size.width / 2;
     float cy = rect.size.height / 2;
 
-    // Desenha o Círculo do FOV
     if (g_Config.drawFOV) {
         CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
         CGContextSetLineWidth(ctx, 1.5);
         CGContextAddArc(ctx, cx, cy, g_Config.aimFOV, 0, 2 * M_PI, 0);
         CGContextStrokePath(ctx);
     }
+
+    if (g_Config.espEnabled) {
+        std::lock_guard<std::mutex> lk(g_EspMutex);
+        for (const auto& e : g_EspEntities) {
+            float x = e.headPos.x;
+            float y = rect.size.height - e.headPos.y;
+            float w = 50.0f;
+            float h = (rect.size.height - e.footPos.y) - y;
+
+            // ESP Box
+            if (g_Config.espBox) {
+                CGContextSetRGBStrokeColor(ctx, 1.0, 0.0, 0.0, 1.0);
+                CGContextSetLineWidth(ctx, 2.0);
+                CGContextStrokeRect(ctx, CGRectMake(x - (w/2), y, w, h));
+            }
+
+            // ESP Health
+            if (g_Config.espHealth) {
+                float hpWidth = 5.0f;
+                float hpHeight = h;
+                float hpPercentage = e.health / 200.0f; // Assumindo max HP 200
+                if (hpPercentage > 1.0f) hpPercentage = 1.0f;
+                
+                CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
+                CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (hpHeight * (1.0f - hpPercentage)), hpWidth, hpHeight * hpPercentage));
+            }
+        }
+    }
 }
 @end
 
-// --- ViewController (O Menu) ---
 @interface ViewController : UIViewController
-@property (nonatomic, strong) UISlider *fovSlider;
 @end
 
 @implementation ViewController
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.08 alpha:1.0];
     
-    UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
-    scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, 800);
-    [self.view addSubview:scrollView];
-
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 50, 300, 40)];
-    title.text = @"FF EXTERNAL HUD";
+    float y = 50.0f;
+    
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 300, 40)];
+    title.text = @"FF EXTERNAL iOS";
     title.textColor = [UIColor greenColor];
-    title.font = [UIFont boldSystemFontOfSize:24];
-    [scrollView addSubview:title];
+    [self.view addSubview:title];
+    y += 60;
+    
+    // Toggle Aimbot
+    UISwitch *aimSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
+    aimSwitch.on = g_Config.aimbotEnabled;
+    [aimSwitch addTarget:self action:@selector(toggleAimbot:) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:aimSwitch];
+    UILabel *aimLbl = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
+    aimLbl.text = @"Aimbot";
+    aimLbl.textColor = [UIColor whiteColor];
+    [self.view addSubview:aimLbl];
+    y += 50;
 
-    float y = 100.0f;
-    float spacing = 45.0f;
-
-    // --- AIMBOT SECTION ---
-    UILabel *aimTitle = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 200, 30)];
-    aimTitle.text = @"--- Aimbot ---";
-    aimTitle.textColor = [UIColor cyanColor];
-    [scrollView addSubview:aimTitle];
-    y += 35;
-
-    UISwitch *aimToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
-    aimToggle.on = g_Config.aimbotEnabled;
-    [aimToggle addTarget:self action:@selector(toggleAimbot:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:aimToggle];
-    UILabel *l1 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
-    l1.text = @"Ativar Aimbot";
-    l1.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l1];
-    y += spacing;
-
-    UISwitch *headToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    headToggle.on = g_Config.aimHead;
-    [headToggle addTarget:self action:@selector(toggleHead:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:headToggle];
-    UILabel *l2 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l2.text = @"Cabeça";
-    l2.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l2];
-    y += spacing;
-
-    UISwitch *neckToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    neckToggle.on = g_Config.aimNeck;
-    [neckToggle addTarget:self action:@selector(toggleNeck:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:neckToggle];
-    UILabel *l3 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l3.text = @"Pescoço";
-    l3.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l3];
-    y += spacing;
-
-    UISwitch *chestToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    chestToggle.on = g_Config.aimChest;
-    [chestToggle addTarget:self action:@selector(toggleChest:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:chestToggle];
-    UILabel *l4 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l4.text = @"Peito";
-    l4.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l4];
-    y += spacing;
-
-    // FOV Slider
-    UILabel *l5 = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 300, 30)];
-    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_Config.aimFOV];
-    l5.textColor = [UIColor whiteColor];
-    l5.tag = 100;
-    [scrollView addSubview:l5];
-    y += 30;
-
-    self.fovSlider = [[UISlider alloc] initWithFrame:CGRectMake(20, y, 300, 30)];
-    self.fovSlider.minimumValue = 0;
-    self.fovSlider.maximumValue = 360;
-    self.fovSlider.value = g_Config.aimFOV;
-    [self.fovSlider addTarget:self action:@selector(fovChanged:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:self.fovSlider];
-    y += spacing;
-
-    UISwitch *fovCircleToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
-    fovCircleToggle.on = g_Config.drawFOV;
-    [fovCircleToggle addTarget:self action:@selector(toggleFovCircle:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:fovCircleToggle];
-    UILabel *l6 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
-    l6.text = @"Mostrar Círculo FOV";
-    l6.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l6];
-    y += spacing + 15;
-
-    // --- ESP SECTION ---
-    UILabel *espTitle = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 200, 30)];
-    espTitle.text = @"--- ESP ---";
-    espTitle.textColor = [UIColor cyanColor];
-    [scrollView addSubview:espTitle];
-    y += 35;
-
-    UISwitch *espToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
-    espToggle.on = g_Config.espEnabled;
-    [espToggle addTarget:self action:@selector(toggleESP:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:espToggle];
-    UILabel *l7 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
-    l7.text = @"Ativar ESP";
-    l7.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l7];
-    y += spacing;
-
-    UISwitch *espBoxToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    espBoxToggle.on = g_Config.espBox;
-    [espBoxToggle addTarget:self action:@selector(toggleEspBox:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:espBoxToggle];
-    UILabel *l8 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l8.text = @"Caixa";
-    l8.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l8];
-    y += spacing;
-
-    UISwitch *espHealthToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    espHealthToggle.on = g_Config.espHealth;
-    [espHealthToggle addTarget:self action:@selector(toggleEspHealth:) forControlEvents:UIControlEventValueChanged];
-    [scrollView addSubview:espHealthToggle];
-    UILabel *l9 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l9.text = @"Vida";
-    l9.textColor = [UIColor whiteColor];
-    [scrollView addSubview:l9];
+    // Toggle ESP
+    UISwitch *espSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
+    espSwitch.on = g_Config.espEnabled;
+    [espSwitch addTarget:self action:@selector(toggleESP:) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:espSwitch];
+    UILabel *espLbl = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
+    espLbl.text = @"ESP";
+    espLbl.textColor = [UIColor whiteColor];
+    [self.view addSubview:espLbl];
 }
-
 - (void)toggleAimbot:(UISwitch*)sender { g_Config.aimbotEnabled = sender.isOn; }
-- (void)toggleHead:(UISwitch*)sender { g_Config.aimHead = sender.isOn; }
-- (void)toggleNeck:(UISwitch*)sender { g_Config.aimNeck = sender.isOn; }
-- (void)toggleChest:(UISwitch*)sender { g_Config.aimChest = sender.isOn; }
 - (void)toggleESP:(UISwitch*)sender { g_Config.espEnabled = sender.isOn; }
-- (void)toggleEspBox:(UISwitch*)sender { g_Config.espBox = sender.isOn; }
-- (void)toggleEspHealth:(UISwitch*)sender { g_Config.espHealth = sender.isOn; }
-- (void)toggleFovCircle:(UISwitch*)sender { g_Config.drawFOV = sender.isOn; }
-
-- (void)fovChanged:(UISlider*)sender {
-    g_Config.aimFOV = sender.value;
-    UILabel *l5 = [self.view viewWithTag:100];
-    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_Config.aimFOV];
-}
 @end
 
-// --- AppDelegate ---
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
@@ -227,8 +142,12 @@ extern mach_port_t get_task_port(const char* process_name);
         while (g_Running) {
             if (g_TaskPort == MACH_PORT_NULL) {
                 g_TaskPort = get_task_port("FreeFire");
-                if (g_TaskPort == MACH_PORT_NULL) {
-                    g_TaskPort = get_task_port("UnityFramework");
+                if (g_TaskPort == MACH_PORT_NULL) g_TaskPort = get_task_port("UnityFramework");
+                if (g_TaskPort != MACH_PORT_NULL) {
+                    g_UnityBase = GetUnityBase();
+                    std::thread(HackLoop).detach();
+                    std::thread(AimbotThread).detach();
+                    std::thread(EspThread).detach();
                 }
             }
             std::this_thread::sleep_for(std::chrono::seconds(2));
