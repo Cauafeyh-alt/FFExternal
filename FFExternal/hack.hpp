@@ -71,6 +71,13 @@ void WriteMemory(uintptr_t address, T data) {
     vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
 }
 
+// CENTRALIZADO AQUI PRA NAO DUPLICAR
+inline Vector3 GetEntityPosition(uintptr_t player) {
+    uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
+    if (!trans) return {0, 0, 0};
+    return ReadMemory<Vector3>(trans + 0x90); 
+}
+
 mach_port_t get_task_port(const char* process_name);
 uintptr_t GetUnityBase();
 uintptr_t FindStaticMatchGame();
