@@ -26,11 +26,11 @@ void AimbotThread() {
         }
 
         using GetPosFn = Vector3(*)(uintptr_t);
-        auto getPos = reinterpret_cast<GetPosFn>(g_UnityBase + Offsets::Entity_GetPosition_RVA);
-        Vector3 localPos = getPos(g_LocalPlayer);
+        uintptr_t addrGetPos = g_UnityBase + Offsets::Entity_GetPosition_RVA;
+        Vector3 localPos = SafeCall<Vector3, GetPosFn>(addrGetPos, g_LocalPlayer);
 
         using IsDeadFn = bool(*)(uintptr_t);
-        auto isDead = reinterpret_cast<IsDeadFn>(g_UnityBase + Offsets::Player_IsDead_RVA);
+        uintptr_t addrIsDead = g_UnityBase + Offsets::Player_IsDead_RVA;
 
         uintptr_t bestTarget = 0;
         float bestDist = g_Config.aimRange;
@@ -39,7 +39,9 @@ void AimbotThread() {
         std::lock_guard<std::mutex> lk(g_PlayerMutex);
         for (uintptr_t p : g_Players) {
             if (p == g_LocalPlayer) continue;
-            if (isDead(p)) continue;
+            
+            bool dead = SafeCall<bool, IsDeadFn>(addrIsDead, p);
+            if (dead) continue;
 
             bool isBot = ReadMemory<bool>(p + Offsets::Player_IsClientBot);
             if (isBot) continue;
@@ -48,7 +50,7 @@ void AimbotThread() {
             uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
             if (myTeam == enemyTeam) continue;
 
-            Vector3 enemyPos = getPos(p);
+            Vector3 enemyPos = SafeCall<Vector3, GetPosFn>(addrGetPos, p);
             
             float alturaCabeca = 1.65f; 
             if (g_Config.aimNeck) alturaCabeca = 1.4f;
