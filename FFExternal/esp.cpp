@@ -60,7 +60,6 @@ void EspThread() {
             Vector3 footWorld = pos;
 
             Vector2 headScreen, footScreen;
-            // Ajusta as resolucoes pro teu iPhone
             if (WorldToScreen(headWorld, headScreen, viewMatrix, 430, 932) && 
                 WorldToScreen(footWorld, footScreen, viewMatrix, 430, 932)) {
                 
