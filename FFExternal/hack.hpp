@@ -66,7 +66,6 @@ void WriteMemory(uintptr_t address, T data) {
     vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
 }
 
-// --- DECLARACOES QUE FALTAVAM ---
 mach_port_t get_task_port(const char* process_name);
 uintptr_t GetUnityBase();
 void Log(const std::string& msg);
