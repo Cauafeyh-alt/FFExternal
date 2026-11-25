@@ -15,6 +15,9 @@ uintptr_t g_StaticMatchGame = 0;
 
 char g_LogPath[512] = "";
 
+// CACHE DO GAMEFACADE PRA NAO ESCANEAR DE NOVO
+uintptr_t g_GameFacadeStatic = 0;
+
 extern "C" void set_log_path(const char* path) {
     strncpy(g_LogPath, path, 511);
 }
@@ -122,9 +125,15 @@ uintptr_t GetUnityBase() {
     return 0;
 }
 
-// Pattern Scan Otimizado
 uintptr_t FindStaticMatchGame() {
     if (g_TaskPort == MACH_PORT_NULL || g_UnityBase == 0) return 0;
+
+    // Se a bench ja achou o GameFacade antes, so le o MatchGame
+    if (g_GameFacadeStatic != 0) {
+        uintptr_t matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x8);
+        return matchGame;
+    }
+
     Log("[*] Iniciando Pattern Scan (GameFacade)...");
 
     vm_address_t address = g_UnityBase;
@@ -136,14 +145,14 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t string_addr = 0;
     int regiao_idx = 0;
 
-    // 1. Busca a string "GameFacade" em chunks de 4MB
+    // 1. Busca a string "GameFacade"
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
         if (info.is_submap) { depth++; }
         else {
             if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
-                vm_size_t chunk_size = 4 * 1024 * 1024; // 4MB
+                vm_size_t chunk_size = 4 * 1024 * 1024;
                 char* buffer = (char*)malloc(chunk_size);
                 if (buffer) {
                     for (vm_address_t chunk_addr = address; chunk_addr < address + size; chunk_addr += chunk_size) {
@@ -178,7 +187,7 @@ uintptr_t FindStaticMatchGame() {
     }
     Log("[+] String GameFacade encontrada em: 0x" + std::to_string(string_addr));
 
-    // 2. Acha o ponteiro pra string (Il2CppClass)
+    // 2. Acha o Il2CppClass e VALIDA o static_fields
     uintptr_t class_ptr = 0;
     address = g_UnityBase;
     
@@ -194,9 +203,15 @@ uintptr_t FindStaticMatchGame() {
                     if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
                         for (vm_size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
                             if (buffer[i] == string_addr) {
-                                // No iOS arm64, o offset do name na Il2CppClass é 0x10
-                                class_ptr = address + (i * sizeof(uintptr_t)) - 0x10;
-                                break;
+                                uintptr_t candidate = address + (i * sizeof(uintptr_t)) - 0x10;
+                                uintptr_t static_fields = ReadMemory<uintptr_t>(candidate + 0xB8);
+                                
+                                // Valida se o static_fields ta na area de heap (evita falso positivo da string table)
+                                if (static_fields > 0x100000000 && static_fields < 0x800000000000) {
+                                    class_ptr = candidate;
+                                    g_GameFacadeStatic = static_fields;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -209,23 +224,16 @@ uintptr_t FindStaticMatchGame() {
     }
 
     if (class_ptr == 0) {
-        Log("[-] Il2CppClass do GameFacade nao encontrado.");
+        Log("[-] Il2CppClass do GameFacade nao encontrado (ou validacao falhou).");
         return 0;
     }
-    Log("[+] Il2CppClass encontrado em: 0x" + std::to_string(class_ptr));
+    Log("[+] Il2CppClass VALIDADO em: 0x" + std::to_string(class_ptr));
+    Log("[+] static_fields encontrado em: 0x" + std::to_string(g_GameFacadeStatic));
 
-    // 3. Le static_fields
-    uintptr_t static_fields = ReadMemory<uintptr_t>(class_ptr + 0xB8);
-    if (static_fields == 0) {
-        Log("[-] static_fields NULL.");
-        return 0;
-    }
-    Log("[+] static_fields encontrado em: 0x" + std::to_string(static_fields));
-
-    // 4. Le MatchGame
-    uintptr_t matchGame = ReadMemory<uintptr_t>(static_fields + 0x8);
+    // 3. Le o MatchGame
+    uintptr_t matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x8);
     if (matchGame == 0) {
-        Log("[-] MatchGame NULL (Fora de partida?).");
+        Log("[-] MatchGame NULL (Fora de partida, aguardando...).");
         return 0;
     }
     
