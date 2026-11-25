@@ -76,7 +76,6 @@ uintptr_t GetUnityBase() {
     natural_t depth = 0;
     struct vm_region_submap_info_64 info;
     mach_msg_type_number_t count;
-    int regions_scanned = 0;
 
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
@@ -86,26 +85,47 @@ uintptr_t GetUnityBase() {
         if (info.is_submap) {
             depth++;
         } else {
-            regions_scanned++;
-            // Checa se a região é legível (Mach-O header fica numa região r-x ou r--)
-            if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
-                uint32_t magic = 0;
-                vm_size_t readSize = sizeof(magic);
-                if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)&magic, &readSize) == KERN_SUCCESS) {
-                    // Achou o header 64-bit
-                    if (magic == MH_MAGIC_64) {
-                        // Lê os primeiros 16KB pra achar o nome do framework nos load commands
-                        char *buffer = (char *)malloc(0x4000);
-                        if (buffer) {
-                            readSize = 0x4000;
-                            if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                                if (strstr(buffer, "UnityFramework") != NULL) {
-                                    free(buffer);
-                                    Log("[+] UnityFramework encontrado em: 0x" + std::to_string(address) + " apos " + std::to_string(regions_scanned) + " regioes.");
-                                    return address;
+            if (info.protection & VM_PROT_READ) {
+                struct mach_header_64 header;
+                vm_size_t readSize = sizeof(header);
+                if (vm_read_overwrite(g_TaskPort, address, readSize, (vm_address_t)&header, &readSize) == KERN_SUCCESS) {
+                    if (header.magic == MH_MAGIC_64) {
+                        vm_size_t cmdsSize = header.sizeofcmds;
+                        if (cmdsSize > 0 && cmdsSize < 0x10000) {
+                            char* cmds = (char*)malloc(cmdsSize);
+                            if (cmds) {
+                                if (vm_read_overwrite(g_TaskPort, address + sizeof(header), cmdsSize, (vm_address_t)cmds, &cmdsSize) == KERN_SUCCESS) {
+                                    uint32_t ncmds = header.ncmds;
+                                    char* ptr = cmds;
+                                    bool found = false;
+                                    
+                                    for (uint32_t i = 0; i < ncmds; i++) {
+                                        if (ptr + sizeof(struct load_command) > cmds + cmdsSize) break;
+                                        struct load_command* lc = (struct load_command*)ptr;
+                                        if (lc->cmdsize == 0 || ptr + lc->cmdsize > cmds + cmdsSize) break;
+
+                                        if (lc->cmd == LC_ID_DYLIB || lc->cmd == LC_LOAD_DYLIB) {
+                                            struct dylib_command* dylib = (struct dylib_command*)lc;
+                                            char* name = (char*)lc + dylib->dylib.name.offset;
+                                            
+                                            if (name >= (char*)lc && name < (char*)lc + lc->cmdsize) {
+                                                if (strstr(name, "UnityFramework")) {
+                                                    found = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        ptr += lc->cmdsize;
+                                    }
+                                    free(cmds);
+                                    if (found) {
+                                        Log("[+] UnityFramework encontrado em: 0x" + std::to_string(address));
+                                        return address;
+                                    }
+                                } else {
+                                    free(cmds);
                                 }
                             }
-                            free(buffer);
                         }
                     }
                 }
@@ -113,6 +133,6 @@ uintptr_t GetUnityBase() {
         }
         address += size;
     }
-    Log("[-] UnityFramework NAO encontrado apos " + std::to_string(regions_scanned) + " regioes.");
+    Log("[-] UnityFramework NAO encontrado.");
     return 0;
 }
