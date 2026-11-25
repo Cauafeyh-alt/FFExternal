@@ -29,7 +29,6 @@ void Log(const std::string& msg) {
 
 mach_port_t get_task_port(const char* process_name) {
     Log("[*] Buscando processo: " + std::string(process_name));
-    
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
     size_t size;
     if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0) return MACH_PORT_NULL;
