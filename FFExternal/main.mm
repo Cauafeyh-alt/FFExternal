@@ -3,24 +3,12 @@
 #include <thread>
 #include <chrono>
 #include <cmath>
+#include "hack.hpp"
 
 // Puxa as funções do Memory.cpp
 extern mach_port_t get_task_port(const char* process_name);
-extern mach_port_t g_TaskPort;
 
-// Variáveis Globais
-bool g_Aimbot = false;
-bool g_AimHead = true;
-bool g_AimNeck = false;
-bool g_AimChest = false;
-bool g_ESP = false;
-bool g_ESPBox = true;
-bool g_ESPHealth = true;
-bool g_DrawFOV = false;
-float g_AimFOV = 120.0f;
-bool g_Running = true;
-
-// --- View do Overlay (Desenho do FOV) ---
+// --- View do Overlay (Desenho) ---
 @interface OverlayView : UIView
 @end
 
@@ -29,7 +17,7 @@ bool g_Running = true;
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = [UIColor clearColor];
-        self.userInteractionEnabled = NO; // Importante: deixa o toque passar
+        self.userInteractionEnabled = NO;
         self.opaque = NO;
     }
     return self;
@@ -43,10 +31,10 @@ bool g_Running = true;
     float cy = rect.size.height / 2;
 
     // Desenha o Círculo do FOV
-    if (g_DrawFOV) {
+    if (g_Config.drawFOV) {
         CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
         CGContextSetLineWidth(ctx, 1.5);
-        CGContextAddArc(ctx, cx, cy, g_AimFOV, 0, 2 * M_PI, 0);
+        CGContextAddArc(ctx, cx, cy, g_Config.aimFOV, 0, 2 * M_PI, 0);
         CGContextStrokePath(ctx);
     }
 }
@@ -84,6 +72,7 @@ bool g_Running = true;
     y += 35;
 
     UISwitch *aimToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
+    aimToggle.on = g_Config.aimbotEnabled;
     [aimToggle addTarget:self action:@selector(toggleAimbot:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:aimToggle];
     UILabel *l1 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
@@ -93,7 +82,7 @@ bool g_Running = true;
     y += spacing;
 
     UISwitch *headToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    headToggle.on = YES;
+    headToggle.on = g_Config.aimHead;
     [headToggle addTarget:self action:@selector(toggleHead:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:headToggle];
     UILabel *l2 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
@@ -103,6 +92,7 @@ bool g_Running = true;
     y += spacing;
 
     UISwitch *neckToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
+    neckToggle.on = g_Config.aimNeck;
     [neckToggle addTarget:self action:@selector(toggleNeck:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:neckToggle];
     UILabel *l3 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
@@ -112,6 +102,7 @@ bool g_Running = true;
     y += spacing;
 
     UISwitch *chestToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
+    chestToggle.on = g_Config.aimChest;
     [chestToggle addTarget:self action:@selector(toggleChest:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:chestToggle];
     UILabel *l4 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
@@ -122,7 +113,7 @@ bool g_Running = true;
 
     // FOV Slider
     UILabel *l5 = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 300, 30)];
-    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_AimFOV];
+    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_Config.aimFOV];
     l5.textColor = [UIColor whiteColor];
     l5.tag = 100;
     [scrollView addSubview:l5];
@@ -131,12 +122,13 @@ bool g_Running = true;
     self.fovSlider = [[UISlider alloc] initWithFrame:CGRectMake(20, y, 300, 30)];
     self.fovSlider.minimumValue = 0;
     self.fovSlider.maximumValue = 360;
-    self.fovSlider.value = g_AimFOV;
+    self.fovSlider.value = g_Config.aimFOV;
     [self.fovSlider addTarget:self action:@selector(fovChanged:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:self.fovSlider];
     y += spacing;
 
     UISwitch *fovCircleToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
+    fovCircleToggle.on = g_Config.drawFOV;
     [fovCircleToggle addTarget:self action:@selector(toggleFovCircle:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:fovCircleToggle];
     UILabel *l6 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
@@ -153,6 +145,7 @@ bool g_Running = true;
     y += 35;
 
     UISwitch *espToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
+    espToggle.on = g_Config.espEnabled;
     [espToggle addTarget:self action:@selector(toggleESP:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:espToggle];
     UILabel *l7 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
@@ -162,7 +155,7 @@ bool g_Running = true;
     y += spacing;
 
     UISwitch *espBoxToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    espBoxToggle.on = YES;
+    espBoxToggle.on = g_Config.espBox;
     [espBoxToggle addTarget:self action:@selector(toggleEspBox:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:espBoxToggle];
     UILabel *l8 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
@@ -172,7 +165,7 @@ bool g_Running = true;
     y += spacing;
 
     UISwitch *espHealthToggle = [[UISwitch alloc] initWithFrame:CGRectMake(40, y, 50, 30)];
-    espHealthToggle.on = YES;
+    espHealthToggle.on = g_Config.espHealth;
     [espHealthToggle addTarget:self action:@selector(toggleEspHealth:) forControlEvents:UIControlEventValueChanged];
     [scrollView addSubview:espHealthToggle];
     UILabel *l9 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
@@ -181,23 +174,23 @@ bool g_Running = true;
     [scrollView addSubview:l9];
 }
 
-- (void)toggleAimbot:(UISwitch*)sender { g_Aimbot = sender.isOn; }
-- (void)toggleHead:(UISwitch*)sender { g_AimHead = sender.isOn; }
-- (void)toggleNeck:(UISwitch*)sender { g_AimNeck = sender.isOn; }
-- (void)toggleChest:(UISwitch*)sender { g_AimChest = sender.isOn; }
-- (void)toggleESP:(UISwitch*)sender { g_ESP = sender.isOn; }
-- (void)toggleEspBox:(UISwitch*)sender { g_ESPBox = sender.isOn; }
-- (void)toggleEspHealth:(UISwitch*)sender { g_ESPHealth = sender.isOn; }
-- (void)toggleFovCircle:(UISwitch*)sender { g_DrawFOV = sender.isOn; }
+- (void)toggleAimbot:(UISwitch*)sender { g_Config.aimbotEnabled = sender.isOn; }
+- (void)toggleHead:(UISwitch*)sender { g_Config.aimHead = sender.isOn; }
+- (void)toggleNeck:(UISwitch*)sender { g_Config.aimNeck = sender.isOn; }
+- (void)toggleChest:(UISwitch*)sender { g_Config.aimChest = sender.isOn; }
+- (void)toggleESP:(UISwitch*)sender { g_Config.espEnabled = sender.isOn; }
+- (void)toggleEspBox:(UISwitch*)sender { g_Config.espBox = sender.isOn; }
+- (void)toggleEspHealth:(UISwitch*)sender { g_Config.espHealth = sender.isOn; }
+- (void)toggleFovCircle:(UISwitch*)sender { g_Config.drawFOV = sender.isOn; }
 
 - (void)fovChanged:(UISlider*)sender {
-    g_AimFOV = sender.value;
+    g_Config.aimFOV = sender.value;
     UILabel *l5 = [self.view viewWithTag:100];
-    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_AimFOV];
+    l5.text = [NSString stringWithFormat:@"Aim FOV (0-360): %.0f", g_Config.aimFOV];
 }
 @end
 
-// --- AppDelegate (Inicializa as Janelas) ---
+// --- AppDelegate ---
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
@@ -206,12 +199,10 @@ bool g_Running = true;
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     
-    // 1. Janela Normal (O Menu de Configurações)
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     self.window.rootViewController = [[ViewController alloc] init];
     [self.window makeKeyAndVisible];
     
-    // 2. Janela Flutuante (O Overlay Transparente por cima)
     self.overlayWindow = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     self.overlayWindow.windowLevel = UIWindowLevelAlert + 1;
     self.overlayWindow.backgroundColor = [UIColor clearColor];
@@ -221,26 +212,33 @@ bool g_Running = true;
     OverlayView *overlay = [[OverlayView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     [self.overlayWindow.rootViewController.view addSubview:overlay];
     self.overlayWindow.hidden = NO;
-    
-    // 🔥 A LINHA MÁGICA: Permite que os toques no menu funcionem
     self.overlayWindow.userInteractionEnabled = NO;
 
-    // Loop pra desenhar o FOV 60 vezes por segundo
     NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
         [overlay setNeedsDisplay];
     }];
     [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
 
-    // Mantém o app vivo em background
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
     [session setActive:YES error:nil];
+
+    std::thread([](){
+        while (g_Running) {
+            if (g_TaskPort == MACH_PORT_NULL) {
+                g_TaskPort = get_task_port("FreeFire");
+                if (g_TaskPort == MACH_PORT_NULL) {
+                    g_TaskPort = get_task_port("UnityFramework");
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    }).detach();
 
     return YES;
 }
 @end
 
-// --- Função Main (Obrigatória) ---
 int main(int argc, char * argv[]) {
     @autoreleasepool {
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
