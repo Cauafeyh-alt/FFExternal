@@ -50,6 +50,23 @@ struct EspEntity {
 inline std::vector<EspEntity> g_EspEntities;
 inline std::mutex g_EspMutex;
 
+// --- TEMPLATES AQUI ---
+template <typename T>
+T ReadMemory(uintptr_t address) {
+    T data;
+    vm_size_t size = sizeof(T);
+    if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
+        return T();
+    }
+    return data;
+}
+
+template <typename T>
+void WriteMemory(uintptr_t address, T data) {
+    vm_size_t size = sizeof(T);
+    vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
+}
+
 void HackLoop();
 void AimbotThread();
 void EspThread();
