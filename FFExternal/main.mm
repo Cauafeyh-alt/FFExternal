@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <QuartzCore/QuartzCore.h>
 #include <thread>
 #include <chrono>
 #include "hack.hpp"
@@ -29,7 +30,6 @@ extern uintptr_t GetUnityBase();
     float cx = rect.size.width / 2;
     float cy = rect.size.height / 2;
 
-    // Círculo do FOV
     if (g_Config.drawFOV) {
         CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
         CGContextSetLineWidth(ctx, 1.5);
@@ -37,29 +37,25 @@ extern uintptr_t GetUnityBase();
         CGContextStrokePath(ctx);
     }
 
-    // Desenha ESP
     if (g_Config.espEnabled) {
         std::lock_guard<std::mutex> lk(g_EspMutex);
         for (const auto& e : g_EspEntities) {
             float x = e.headPos.x;
-            // iOS inverte o eixo Y pro CGContext (origem no canto superior esquerdo)
             float y = rect.size.height - e.headPos.y;
             float w = 50.0f;
             float h = (rect.size.height - e.footPos.y) - y;
 
             if (h > 0) {
-                // ESP Box
                 if (g_Config.espBox) {
                     CGContextSetRGBStrokeColor(ctx, 1.0, 0.0, 0.0, 1.0);
                     CGContextSetLineWidth(ctx, 2.0);
                     CGContextStrokeRect(ctx, CGRectMake(x - (w/2), y, w, h));
                 }
 
-                // ESP Health
                 if (g_Config.espHealth) {
                     float hpWidth = 5.0f;
                     float hpHeight = h;
-                    float hpPercentage = (float)e.health / 200.0f; // Assumindo max HP 200
+                    float hpPercentage = (float)e.health / 200.0f;
                     if (hpPercentage > 1.0f) hpPercentage = 1.0f;
                     
                     CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
@@ -89,7 +85,6 @@ extern uintptr_t GetUnityBase();
     [self.view addSubview:title];
     y += 60;
     
-    // Toggle Aimbot
     UISwitch *aimSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
     aimSwitch.on = g_Config.aimbotEnabled;
     [aimSwitch addTarget:self action:@selector(toggleAimbot:) forControlEvents:UIControlEventValueChanged];
@@ -100,7 +95,6 @@ extern uintptr_t GetUnityBase();
     [self.view addSubview:aimLbl];
     y += 50;
 
-    // Toggle ESP
     UISwitch *espSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
     espSwitch.on = g_Config.espEnabled;
     [espSwitch addTarget:self action:@selector(toggleESP:) forControlEvents:UIControlEventValueChanged];
@@ -118,6 +112,7 @@ extern uintptr_t GetUnityBase();
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
+@property (strong, nonatomic) CADisplayLink *displayLink;
 @end
 
 @implementation AppDelegate
@@ -138,10 +133,9 @@ extern uintptr_t GetUnityBase();
     self.overlayWindow.hidden = NO;
     self.overlayWindow.userInteractionEnabled = NO;
 
-    NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 repeats:YES block:^(NSTimer * _nonnull timer) {
-        [overlay setNeedsDisplay];
-    }];
-    [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+    // Substituindo o NSTimer por CADisplayLink (60 FPS sem erro de block)
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateOverlay:)];
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
@@ -164,6 +158,10 @@ extern uintptr_t GetUnityBase();
     }).detach();
 
     return YES;
+}
+
+- (void)updateOverlay:(CADisplayLink *)displayLink {
+    [self.overlayWindow.rootViewController.view setNeedsDisplay];
 }
 @end
 
