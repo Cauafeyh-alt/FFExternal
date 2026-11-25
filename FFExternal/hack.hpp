@@ -36,8 +36,6 @@ inline uintptr_t g_LocalPlayer = 0;
 inline std::vector<uintptr_t> g_Players;
 inline bool g_Running = true;
 inline std::mutex g_PlayerMutex;
-
-// Debug
 inline std::string g_DebugInfo = "Aguardando...";
 
 extern mach_port_t g_TaskPort;
@@ -67,6 +65,11 @@ void WriteMemory(uintptr_t address, T data) {
     vm_size_t size = sizeof(T);
     vm_write(g_TaskPort, (vm_address_t)address, (vm_address_t)&data, size);
 }
+
+// --- DECLARACOES QUE FALTAVAM ---
+mach_port_t get_task_port(const char* process_name);
+uintptr_t GetUnityBase();
+void Log(const std::string& msg);
 
 void HackLoop();
 void AimbotThread();
