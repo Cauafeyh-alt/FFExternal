@@ -25,6 +25,7 @@ jobs:
           cd FFExternal
           mkdir -p Payload
           cp -r .theos/_/Applications/FFExternal.app Payload/
+          cp Info.plist Payload/FFExternal.app/Info.plist
           zip -qry FFExternal.tipa Payload
 
       - name: Upload Tipa
