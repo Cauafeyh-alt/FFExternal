@@ -49,6 +49,16 @@ extern "C" void set_log_path(const char* path);
                     CGContextSetLineWidth(ctx, 2.0);
                     CGContextStrokeRect(ctx, CGRectMake(x - (w/2), y, w, h));
                 }
+
+                if (g_Config.espHealth) {
+                    float hpWidth = 5.0f;
+                    float hpHeight = h;
+                    float hpPercentage = (float)e.health / 200.0f;
+                    if (hpPercentage > 1.0f) hpPercentage = 1.0f;
+                    
+                    CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
+                    CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (hpHeight * (1.0f - hpPercentage)), hpWidth, hpHeight * hpPercentage));
+                }
             }
         }
     }
@@ -79,7 +89,6 @@ extern "C" void set_log_path(const char* path);
     [scroll addSubview:title];
     y += 50;
 
-    // Debug Label
     self.debugLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 350, 40)];
     self.debugLabel.text = @"Status: Iniciando...";
     self.debugLabel.textColor = [UIColor yellowColor];
@@ -88,7 +97,6 @@ extern "C" void set_log_path(const char* path);
     [scroll addSubview:self.debugLabel];
     y += 50;
 
-    // --- AIMBOT ---
     UILabel *aimTitle = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 200, 30)];
     aimTitle.text = @"--- Aimbot ---";
     aimTitle.textColor = [UIColor cyanColor];
@@ -153,7 +161,6 @@ extern "C" void set_log_path(const char* path);
     [scroll addSubview:l6];
     y += spacing + 15;
 
-    // --- ESP ---
     UILabel *espTitle = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 200, 30)];
     espTitle.text = @"--- ESP ---";
     espTitle.textColor = [UIColor cyanColor];
