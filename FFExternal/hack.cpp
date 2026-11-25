@@ -27,19 +27,25 @@ void HackLoop() {
         }
 
         using GetLocalPlayerFn = uintptr_t(*)();
-        auto getLocalPlayer = reinterpret_cast<GetLocalPlayerFn>(g_UnityBase + Offsets::GF_CurrentLocalPlayer);
-        g_LocalPlayer = getLocalPlayer();
+        uintptr_t addrLocalPlayer = g_UnityBase + Offsets::GF_CurrentLocalPlayer;
+        g_LocalPlayer = SafeCall<uintptr_t, GetLocalPlayerFn>(addrLocalPlayer);
+
+        if (g_LocalPlayer == 0) {
+            g_DebugInfo = "LocalPlayer NULL (Crash ou Fora de Partida)";
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
+        }
 
         using GetCameraMgrFn = uintptr_t(*)();
-        auto getCameraMgr = reinterpret_cast<GetCameraMgrFn>(g_UnityBase + Offsets::GF_CurrentCameraMgr);
-        uintptr_t cameraMgr = getCameraMgr();
+        uintptr_t addrCameraMgr = g_UnityBase + Offsets::GF_CurrentCameraMgr;
+        uintptr_t cameraMgr = SafeCall<uintptr_t, GetCameraMgrFn>(addrCameraMgr);
         if (cameraMgr) {
             g_GameCamera = ReadMemory<uintptr_t>(cameraMgr + Offsets::CameraControllerMgr_GameCamera);
         }
 
         using GetMatchFn = uintptr_t(*)();
-        auto getMatch = reinterpret_cast<GetMatchFn>(g_UnityBase + Offsets::GF_CurrentMatch);
-        uintptr_t match = getMatch();
+        uintptr_t addrMatch = g_UnityBase + Offsets::GF_CurrentMatch;
+        uintptr_t match = SafeCall<uintptr_t, GetMatchFn>(addrMatch);
 
         if (match) {
             uintptr_t playerList = ReadMemory<uintptr_t>(match + Offsets::JM_PlayerList);
@@ -55,17 +61,8 @@ void HackLoop() {
                         uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
                         if (player) g_Players.push_back(player);
                     }
-                    g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
-                } else {
-                    g_DebugInfo = "Lista Vazia | Count: " + std::to_string(playerCount);
                 }
-
-                static auto lastLog = std::chrono::steady_clock::now();
-                if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - lastLog).count() > 5) {
-                    Log("Match: 0x" + std::to_string(match) + " | List: 0x" + std::to_string(playerList) + " | Count: " + std::to_string(playerCount));
-                    Log("LocalPlayer: 0x" + std::to_string(g_LocalPlayer) + " | Camera: 0x" + std::to_string(g_GameCamera));
-                    lastLog = std::chrono::steady_clock::now();
-                }
+                g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
             } else {
                 g_DebugInfo = "Match OK | List NULL";
             }
