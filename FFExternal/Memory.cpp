@@ -13,8 +13,6 @@ mach_port_t g_TaskPort = MACH_PORT_NULL;
 uintptr_t g_GameCamera = 0;
 uintptr_t g_StaticMatchGame = 0;
 
-// A LINHA g_UnityBase FOI REMOVIDA DAQUI (Ela vive no offset.hpp)
-
 char g_LogPath[512] = "";
 
 extern "C" void set_log_path(const char* path) {
@@ -136,6 +134,7 @@ uintptr_t FindStaticMatchGame() {
 
     uintptr_t string_addr = 0;
 
+    // 1. Acha a string "GameFacade" ou "COW.GameFacade"
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
@@ -146,8 +145,12 @@ uintptr_t FindStaticMatchGame() {
                 if (buffer) {
                     vm_size_t readSize = size;
                     if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                        for (vm_size_t i = 0; i < readSize - 11; i++) {
+                        for (vm_size_t i = 0; i < readSize - 15; i++) {
                             if (memcmp(buffer + i, "GameFacade", 10) == 0 && buffer[i+10] == '\0') {
+                                string_addr = address + i;
+                                break;
+                            }
+                            if (memcmp(buffer + i, "COW.GameFacade", 14) == 0 && buffer[i+14] == '\0') {
                                 string_addr = address + i;
                                 break;
                             }
@@ -165,7 +168,9 @@ uintptr_t FindStaticMatchGame() {
         Log("[-] String GameFacade nao encontrada.");
         return 0;
     }
+    Log("[+] String GameFacade encontrada em: 0x" + std::to_string(string_addr));
 
+    // 2. Acha o ponteiro pra string e calcula o Il2CppClass
     uintptr_t class_ptr = 0;
     address = g_UnityBase;
     while (true) {
@@ -180,6 +185,7 @@ uintptr_t FindStaticMatchGame() {
                     if (vm_read_overwrite(g_TaskPort, address, size, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
                         for (vm_size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
                             if (buffer[i] == string_addr) {
+                                // Ajuste: O offset do nome no Il2CppClass (arm64) é 0x10
                                 class_ptr = address + (i * sizeof(uintptr_t)) - 0x10;
                                 break;
                             }
@@ -197,14 +203,23 @@ uintptr_t FindStaticMatchGame() {
         Log("[-] Il2CppClass do GameFacade nao encontrado.");
         return 0;
     }
+    Log("[+] Il2CppClass encontrado em: 0x" + std::to_string(class_ptr));
 
+    // 3. Le o static_fields (offset 0xB8 no iOS arm64)
     uintptr_t static_fields = ReadMemory<uintptr_t>(class_ptr + 0xB8);
     if (static_fields == 0) {
         Log("[-] static_fields NULL.");
         return 0;
     }
+    Log("[+] static_fields encontrado em: 0x" + std::to_string(static_fields));
 
+    // 4. Le o MatchGame (offset 0x8)
     uintptr_t matchGame = ReadMemory<uintptr_t>(static_fields + 0x8);
+    if (matchGame == 0) {
+        Log("[-] MatchGame NULL (Fora de partida?).");
+        return 0;
+    }
+    
     Log("[+] GameFacade encontrado! MatchGame: 0x" + std::to_string(matchGame));
     return matchGame;
 }
