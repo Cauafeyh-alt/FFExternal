@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <mutex>
+#include <string>
 #include <mach/mach.h>
 #include "offset.hpp"
 
@@ -28,7 +29,6 @@ struct Config {
     bool espEnabled = false;
     bool espBox = true;
     bool espHealth = true;
-    float espMaxDist = 300.0f;
 };
 
 inline Config g_Config;
@@ -36,6 +36,9 @@ inline uintptr_t g_LocalPlayer = 0;
 inline std::vector<uintptr_t> g_Players;
 inline bool g_Running = true;
 inline std::mutex g_PlayerMutex;
+
+// Debug
+inline std::string g_DebugInfo = "Aguardando...";
 
 extern mach_port_t g_TaskPort;
 extern uintptr_t g_UnityBase;
@@ -45,12 +48,10 @@ struct EspEntity {
     Vector2 headPos;
     Vector2 footPos;
     float health;
-    float distance;
 };
 inline std::vector<EspEntity> g_EspEntities;
 inline std::mutex g_EspMutex;
 
-// --- TEMPLATES AQUI ---
 template <typename T>
 T ReadMemory(uintptr_t address) {
     T data;
