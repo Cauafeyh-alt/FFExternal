@@ -26,48 +26,39 @@ void HackLoop() {
             }
         }
 
-        using GetLocalPlayerFn = uintptr_t(*)();
-        uintptr_t addrLocalPlayer = g_UnityBase + Offsets::GF_CurrentLocalPlayer;
-        g_LocalPlayer = SafeCall<uintptr_t, GetLocalPlayerFn>(addrLocalPlayer);
-
-        if (g_LocalPlayer == 0) {
-            g_DebugInfo = "LocalPlayer NULL (Crash ou Fora de Partida)";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            continue;
+        if (g_StaticMatchGame == 0) {
+            g_StaticMatchGame = FindStaticMatchGame();
+            if (g_StaticMatchGame == 0) {
+                g_DebugInfo = "Status: MatchGame nao achado";
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                continue;
+            }
         }
 
+        // Puxa a Camera
         using GetCameraMgrFn = uintptr_t(*)();
-        uintptr_t addrCameraMgr = g_UnityBase + Offsets::GF_CurrentCameraMgr;
-        uintptr_t cameraMgr = SafeCall<uintptr_t, GetCameraMgrFn>(addrCameraMgr);
-        if (cameraMgr) {
-            g_GameCamera = ReadMemory<uintptr_t>(cameraMgr + Offsets::CameraControllerMgr_GameCamera);
-        }
+        // Como nao podemos chamar RVAs, a Camera tambem precisa ser lida por ponteiro.
+        // Mas por enquanto, vamos usar o MatchGame pra achar a lista de players.
 
-        using GetMatchFn = uintptr_t(*)();
-        uintptr_t addrMatch = g_UnityBase + Offsets::GF_CurrentMatch;
-        uintptr_t match = SafeCall<uintptr_t, GetMatchFn>(addrMatch);
-
-        if (match) {
-            uintptr_t playerList = ReadMemory<uintptr_t>(match + Offsets::JM_PlayerList);
-            if (playerList) {
-                uintptr_t playerArray = ReadMemory<uintptr_t>(playerList + 0x10);
-                int playerCount = ReadMemory<int>(playerList + 0x18);
-                
-                std::lock_guard<std::mutex> lk(g_PlayerMutex);
-                g_Players.clear();
-                
-                if (playerArray && playerCount > 0 && playerCount < 100) {
-                    for (int i = 0; i < playerCount; i++) {
-                        uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
-                        if (player) g_Players.push_back(player);
-                    }
+        uintptr_t playerList = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::JM_PlayerList);
+        if (playerList) {
+            uintptr_t playerArray = ReadMemory<uintptr_t>(playerList + 0x10);
+            int playerCount = ReadMemory<int>(playerList + 0x18);
+            
+            std::lock_guard<std::mutex> lk(g_PlayerMutex);
+            g_Players.clear();
+            
+            if (playerArray && playerCount > 0 && playerCount < 100) {
+                for (int i = 0; i < playerCount; i++) {
+                    uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
+                    if (player) g_Players.push_back(player);
                 }
                 g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
             } else {
-                g_DebugInfo = "Match OK | List NULL";
+                g_DebugInfo = "Lista Vazia | Count: " + std::to_string(playerCount);
             }
         } else {
-            g_DebugInfo = "Match NULL (Aguardando...)";
+            g_DebugInfo = "Match OK | List NULL";
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
