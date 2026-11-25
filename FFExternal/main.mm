@@ -7,6 +7,7 @@
 extern mach_port_t get_task_port(const char* process_name);
 extern uintptr_t GetUnityBase();
 
+// --- View do Overlay (Desenho) ---
 @interface OverlayView : UIView
 @end
 
@@ -28,6 +29,7 @@ extern uintptr_t GetUnityBase();
     float cx = rect.size.width / 2;
     float cy = rect.size.height / 2;
 
+    // Círculo do FOV
     if (g_Config.drawFOV) {
         CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
         CGContextSetLineWidth(ctx, 1.5);
@@ -35,36 +37,41 @@ extern uintptr_t GetUnityBase();
         CGContextStrokePath(ctx);
     }
 
+    // Desenha ESP
     if (g_Config.espEnabled) {
         std::lock_guard<std::mutex> lk(g_EspMutex);
         for (const auto& e : g_EspEntities) {
             float x = e.headPos.x;
+            // iOS inverte o eixo Y pro CGContext (origem no canto superior esquerdo)
             float y = rect.size.height - e.headPos.y;
             float w = 50.0f;
             float h = (rect.size.height - e.footPos.y) - y;
 
-            // ESP Box
-            if (g_Config.espBox) {
-                CGContextSetRGBStrokeColor(ctx, 1.0, 0.0, 0.0, 1.0);
-                CGContextSetLineWidth(ctx, 2.0);
-                CGContextStrokeRect(ctx, CGRectMake(x - (w/2), y, w, h));
-            }
+            if (h > 0) {
+                // ESP Box
+                if (g_Config.espBox) {
+                    CGContextSetRGBStrokeColor(ctx, 1.0, 0.0, 0.0, 1.0);
+                    CGContextSetLineWidth(ctx, 2.0);
+                    CGContextStrokeRect(ctx, CGRectMake(x - (w/2), y, w, h));
+                }
 
-            // ESP Health
-            if (g_Config.espHealth) {
-                float hpWidth = 5.0f;
-                float hpHeight = h;
-                float hpPercentage = e.health / 200.0f; // Assumindo max HP 200
-                if (hpPercentage > 1.0f) hpPercentage = 1.0f;
-                
-                CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
-                CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (hpHeight * (1.0f - hpPercentage)), hpWidth, hpHeight * hpPercentage));
+                // ESP Health
+                if (g_Config.espHealth) {
+                    float hpWidth = 5.0f;
+                    float hpHeight = h;
+                    float hpPercentage = (float)e.health / 200.0f; // Assumindo max HP 200
+                    if (hpPercentage > 1.0f) hpPercentage = 1.0f;
+                    
+                    CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
+                    CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (hpHeight * (1.0f - hpPercentage)), hpWidth, hpHeight * hpPercentage));
+                }
             }
         }
     }
 }
 @end
 
+// --- ViewController (O Menu) ---
 @interface ViewController : UIViewController
 @end
 
@@ -78,6 +85,7 @@ extern uintptr_t GetUnityBase();
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 300, 40)];
     title.text = @"FF EXTERNAL iOS";
     title.textColor = [UIColor greenColor];
+    title.font = [UIFont boldSystemFontOfSize:24];
     [self.view addSubview:title];
     y += 60;
     
@@ -106,6 +114,7 @@ extern uintptr_t GetUnityBase();
 - (void)toggleESP:(UISwitch*)sender { g_Config.espEnabled = sender.isOn; }
 @end
 
+// --- AppDelegate ---
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
@@ -129,7 +138,7 @@ extern uintptr_t GetUnityBase();
     self.overlayWindow.hidden = NO;
     self.overlayWindow.userInteractionEnabled = NO;
 
-    NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
+    NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 repeats:YES block:^(NSTimer * _nonnull timer) {
         [overlay setNeedsDisplay];
     }];
     [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
