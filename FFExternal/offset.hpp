@@ -9,7 +9,7 @@ namespace Offsets {
     constexpr uintptr_t Player_HP_Candidate       = 0xF40;
     constexpr uintptr_t Player_IsDead_RVA         = 0x561C768;
 
-    // JMAGGLCNGIG
+    // JMAGGLCNGIG (Match)
     constexpr uintptr_t JM_PlayerList             = 0x158;
 
     // Camera
