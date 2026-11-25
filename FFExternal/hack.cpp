@@ -9,11 +9,9 @@ void HackLoop() {
     
     while (g_Running) {
         if (g_TaskPort == MACH_PORT_NULL) {
-            // So busca o FreeFire. UnityFramework roda dentro dele.
             g_TaskPort = get_task_port("FreeFire");
-            
             if (g_TaskPort == MACH_PORT_NULL) {
-                g_DebugInfo = "Status: TaskPort NULL (Falta entitlement)";
+                g_DebugInfo = "Status: TaskPort NULL";
                 std::this_thread::sleep_for(std::chrono::seconds(2));
                 continue;
             }
@@ -57,9 +55,17 @@ void HackLoop() {
                         uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
                         if (player) g_Players.push_back(player);
                     }
+                    g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
+                } else {
+                    g_DebugInfo = "Lista Vazia | Count: " + std::to_string(playerCount);
                 }
-                
-                g_DebugInfo = "OK | Players: " + std::to_string(g_Players.size());
+
+                static auto lastLog = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - lastLog).count() > 5) {
+                    Log("Match: 0x" + std::to_string(match) + " | List: 0x" + std::to_string(playerList) + " | Count: " + std::to_string(playerCount));
+                    Log("LocalPlayer: 0x" + std::to_string(g_LocalPlayer) + " | Camera: 0x" + std::to_string(g_GameCamera));
+                    lastLog = std::chrono::steady_clock::now();
+                }
             } else {
                 g_DebugInfo = "Match OK | List NULL";
             }
