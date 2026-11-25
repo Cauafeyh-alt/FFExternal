@@ -15,13 +15,16 @@ struct Vector3 {
 };
 
 struct Config {
+    // Aimbot
     bool aimbotEnabled = false;
     bool aimHead = true;
     bool aimNeck = false;
     bool aimChest = false;
     float aimFOV = 120.0f;
     float aimRange = 500.0f;
+    bool drawFOV = false; // <--- AQUI ESTAVA FALTANDO
 
+    // ESP
     bool espEnabled = false;
     bool espBox = true;
     bool espHealth = true;
