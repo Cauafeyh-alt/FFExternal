@@ -23,6 +23,9 @@ namespace Offsets {
     // RVAs (Funcoes Nativas)
     constexpr uintptr_t Entity_GetPosition_RVA    = 0x6B49D04;
     constexpr uintptr_t Camera_WorldToScreen_RVA  = 0x8CFE5C0;
+    
+    // Entity (O que estava faltando)
+    constexpr uintptr_t Entity_CachedTransform    = 0x58;
 }
 
 inline uintptr_t g_UnityBase = 0;
