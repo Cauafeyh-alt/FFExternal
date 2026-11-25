@@ -35,7 +35,7 @@ void EspThread() {
             if (myTeam == enemyTeam) continue;
 
             Vector3 pos = getPos(p);
-            if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue; // Falha ao ler pos
+            if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
             
             Vector3 headWorld = pos; headWorld.y += 1.65f;
             Vector3 footWorld = pos;
