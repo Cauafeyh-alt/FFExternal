@@ -35,11 +35,7 @@ void HackLoop() {
             }
         }
 
-        // Puxa a Camera
-        using GetCameraMgrFn = uintptr_t(*)();
-        // Como nao podemos chamar RVAs, a Camera tambem precisa ser lida por ponteiro.
-        // Mas por enquanto, vamos usar o MatchGame pra achar a lista de players.
-
+        // Puxa a lista de jogadores direto do MatchGame
         uintptr_t playerList = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::JM_PlayerList);
         if (playerList) {
             uintptr_t playerArray = ReadMemory<uintptr_t>(playerList + 0x10);
