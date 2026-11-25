@@ -13,12 +13,12 @@ jobs:
           brew install ldid xz
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
 
-      - name: Build App
+      - name: Build and Stage App
         run: |
           cd FFExternal
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
-          make
+          make stage
 
       - name: Package as Tipa
         run: |
