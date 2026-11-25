@@ -1,0 +1,32 @@
+name: Build External Tipa
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          brew install ldid xz
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+
+      - name: Build App
+        env:
+          THEOS: $HOME/theos
+        run: |
+          make package
+
+      - name: Package as Tipa
+        run: |
+          mkdir -p Payload
+          cp -r .theos/_/Applications/FFExternal.app Payload/
+          zip -qry FFExternal.tipa Payload
+
+      - name: Upload Tipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFExternal-Tipa
+          path: FFExternal.tipa
