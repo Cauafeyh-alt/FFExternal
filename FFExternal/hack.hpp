@@ -4,6 +4,7 @@
 #include <vector>
 #include <mutex>
 #include <mach/mach.h>
+#include "offset.hpp"
 
 struct Vector2 { float x, y; };
 struct Vector3 {
@@ -22,7 +23,7 @@ struct Config {
     bool aimChest = false;
     float aimFOV = 120.0f;
     float aimRange = 500.0f;
-    bool drawFOV = false; // <--- AQUI ESTAVA FALTANDO
+    bool drawFOV = false;
 
     // ESP
     bool espEnabled = false;
