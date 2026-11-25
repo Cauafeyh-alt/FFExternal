@@ -11,8 +11,10 @@
 
 void Log(const std::string& msg);
 
-static sigjmp_buf jump_buffer;
-static void segv_handler(int sig) {
+inline sigjmp_buf jump_buffer;
+
+// O FIX ESTA AQUI: static inline
+static inline void segv_handler(int sig) {
     siglongjmp(jump_buffer, 1);
 }
 
