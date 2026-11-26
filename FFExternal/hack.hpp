@@ -6,6 +6,7 @@
 #include <string>
 #include <mach/mach.h>
 #include <mach/vm_map.h>
+#include <mach/vm_region.h>
 #include <mach-o/loader.h>
 #include "offset.hpp"
 
@@ -63,6 +64,19 @@ inline std::mutex g_EspMutex;
 template <typename T>
 T ReadMemory(uintptr_t address) {
     T data = T();
+    if (address == 0) return T();
+
+    // Escudo Anti-Crash: Valida se a região de memória é acessível antes de ler
+    vm_region_submap_info_data_64_t info;
+    mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+    natural_t depth = 0;
+    vm_address_t region_addr = address;
+    vm_size_t region_size = 0;
+    
+    if (vm_region_recurse_64(g_TaskPort, &region_addr, &region_size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) {
+        return T();
+    }
+    
     vm_size_t size = sizeof(T);
     if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
         return T();
@@ -77,13 +91,14 @@ void WriteMemory(uintptr_t address, T data) {
 }
 
 inline Vector3 GetEntityPosition(uintptr_t player) {
+    // 1. Lê a referência do Transform herdado do Entity (Confirmado 0x58)
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
     
-    // Le o offset 0x90 (padrao Unity 2019+)
+    // 2. Tenta o offset 0x90 (Padrão Unity 2019+)
     Vector3 pos = ReadMemory<Vector3>(trans + 0x90);
     
-    // Fallback pro 0x38 caso a v31 tenha mudado a estrutura
+    // 3. Fallback pro offset 0x38 da própria Transform (Padrão Unity 2022+)
     if (pos.x == 0.0f && pos.y == 0.0f && pos.z == 0.0f) {
         pos = ReadMemory<Vector3>(trans + 0x38);
     }
