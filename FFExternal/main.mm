@@ -224,4 +224,61 @@ extern "C" void set_log_path(const char* path);
 }
 @end
 
-// O AppDelegate e o main continuam idênticos ao anterior, sem mudanças.
+@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@property (strong, nonatomic) UIWindow *window;
+@property (strong, nonatomic) UIWindow *overlayWindow;
+@property (strong, nonatomic) CADisplayLink *displayLink;
+@end
+
+@implementation AppDelegate
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    
+    CGSize screenSize = [UIScreen mainScreen].bounds.size;
+    g_ScreenWidth = (int)MAX(screenSize.width, screenSize.height);
+    g_ScreenHeight = (int)MIN(screenSize.width, screenSize.height);
+
+    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+    self.window.rootViewController = [[ViewController alloc] init];
+    [self.window makeKeyAndVisible];
+    
+    self.overlayWindow = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+    self.overlayWindow.windowLevel = UIWindowLevelAlert + 1;
+    self.overlayWindow.backgroundColor = [UIColor clearColor];
+    self.overlayWindow.rootViewController = [[UIViewController alloc] init];
+    self.overlayWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+    
+    OverlayView *overlay = [[OverlayView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+    [self.overlayWindow.rootViewController.view addSubview:overlay];
+    self.overlayWindow.hidden = NO;
+    self.overlayWindow.userInteractionEnabled = NO;
+
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateOverlay:)];
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
+    [session setActive:YES error:nil];
+
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirectory = [paths objectAtIndex:0];
+    
+    NSString *logPath = [NSString stringWithFormat:@"%@/ff_log.txt", documentsDirectory];
+    set_log_path([logPath UTF8String]);
+
+    std::thread(HackLoop).detach();
+    std::thread(AimbotThread).detach();
+    std::thread(EspThread).detach();
+
+    return YES;
+}
+
+- (void)updateOverlay:(CADisplayLink *)displayLink {
+    [self.overlayWindow.rootViewController.view setNeedsDisplay];
+}
+@end
+
+int main(int argc, char * argv[]) {
+    @autoreleasepool {
+        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+    }
+}
