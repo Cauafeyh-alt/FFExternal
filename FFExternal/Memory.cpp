@@ -51,8 +51,6 @@ mach_port_t get_task_port(const char* process_name) {
     return task;
 }
 
-// Find the image that is *itself* UnityFramework: LC_ID_DYLIB is the self-id.
-// LC_LOAD_DYLIB is a dependency edge from a host binary, not the framework.
 uintptr_t FindUnityBase() {
     mach_port_t tp = GetTaskPort();
     if (tp == MACH_PORT_NULL) return 0;
@@ -84,12 +82,12 @@ uintptr_t FindUnityBase() {
                     if (cmds && vm_read_overwrite(tp, address + sizeof(header), cmdsSize,
                                                   (vm_address_t)cmds, &cmdsSize) == KERN_SUCCESS) {
                         char* ptr = cmds;
-                        bool found = false;
+                        bool found = false; // <-- AQUI: Declarado fora do loop pra ter escopo
                         for (uint32_t i = 0; i < header.ncmds && !found; i++) {
                             if (ptr + sizeof(struct load_command) > cmds + cmdsSize) break;
                             struct load_command* lc = (struct load_command*)ptr;
                             if (lc->cmdsize == 0 || ptr + lc->cmdsize > cmds + cmdsSize) break;
-                            if (lc->cmd == LC_ID_DYLIB) {   // self-identity, not a dependency
+                            if (lc->cmd == LC_ID_DYLIB) {
                                 struct dylib_command* dy = (struct dylib_command*)lc;
                                 char* name = (char*)lc + dy->dylib.name.offset;
                                 if (name >= (char*)lc && name < (char*)lc + lc->cmdsize
@@ -97,11 +95,13 @@ uintptr_t FindUnityBase() {
                             }
                             ptr += lc->cmdsize;
                         }
-                    }
-                    free(cmds);
-                    if (found) {
-                        Log("[+] UnityFramework (self-id) em: 0x" + std::to_string(address));
-                        return address;
+                        free(cmds);
+                        if (found) {
+                            Log("[+] UnityFramework (self-id) em: 0x" + std::to_string(address));
+                            return address;
+                        }
+                    } else if (cmds) {
+                        free(cmds);
                     }
                 }
             }
@@ -127,7 +127,7 @@ uintptr_t FindStaticMatchGame() {
     {
         vm_address_t address = 0x100000000;
         vm_size_t size = 0;
-        natural_t depth = 0;                              // fresh per pass
+        natural_t depth = 0;
         struct vm_region_submap_info_64 info;
         mach_msg_type_number_t count;
 
@@ -169,7 +169,7 @@ uintptr_t FindStaticMatchGame() {
     {
         vm_address_t address = 0x100000000;
         vm_size_t size = 0;
-        natural_t depth = 0;                              // reset — THE FIX
+        natural_t depth = 0;
         struct vm_region_submap_info_64 info;
         mach_msg_type_number_t count;
 
