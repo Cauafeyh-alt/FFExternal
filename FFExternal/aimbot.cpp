@@ -14,14 +14,17 @@ Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
     float dot = q1.x*q2.x + q1.y*q2.y + q1.z*q2.z + q1.w*q2.w;
     if (dot < 0.0f) { q2.x = -q2.x; q2.y = -q2.y; q2.z = -q2.z; q2.w = -q2.w; dot = -dot; }
     
-    // FIX: Nlerp para angulos pequenos, evita divisao por zero e hard snap
     if (dot > 0.9995f) {
-        return {
+        Quaternion r = {
             q1.x + t * (q2.x - q1.x),
             q1.y + t * (q2.y - q1.y),
             q1.z + t * (q2.z - q1.z),
             q1.w + t * (q2.w - q1.w)
         };
+        // FIX: Normaliza o Quaternion pra evitar bug na engine
+        float len = std::sqrt(r.x*r.x + r.y*r.y + r.z*r.z + r.w*r.w);
+        if (len > 0.0f) { r.x /= len; r.y /= len; r.z /= len; r.w /= len; }
+        return r;
     }
     
     float theta_0 = acosf(dot), theta = theta_0 * t;
