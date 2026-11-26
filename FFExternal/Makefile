@@ -1,13 +1,15 @@
+TARGET := iphone:clang:latest:14.0
 ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = FFExternal
 
-FFExternal_FILES = main.mm Memory.cpp hack.cpp aimbot.cpp esp.cpp
-FFExternal_FRAMEWORKS = UIKit Foundation AVFoundation
-FFExternal_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations -Wno-unused-variable
+FFExternal_FILES = main.mm hack.cpp aimbot.cpp esp.cpp Memory.cpp
+FFExternal_FRAMEWORKS = UIKit AVFoundation QuartzCore
+FFExternal_CFLAGS = -std=c++17 -fobjc-arc -I. -Wno-deprecated-declarations
+FFExternal_LDFLAGS = -lc++ -lpthread
 FFExternal_CODESIGN_FLAGS = -SEntitlements.plist
+FFExternal_INSTALL_PATH = /Applications
 
 include $(THEOS_MAKE_PATH)/application.mk
