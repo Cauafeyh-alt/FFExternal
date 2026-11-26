@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <string>
 #include <mach/mach.h>
 #include <mach/vm_map.h>
@@ -39,7 +40,7 @@ struct Config {
 inline Config g_Config;
 inline uintptr_t g_LocalPlayer = 0;
 inline std::vector<uintptr_t> g_Players;
-inline bool g_Running = true;
+inline std::atomic<bool> g_Running(true);
 inline std::mutex g_PlayerMutex;
 inline std::string g_DebugInfo = "Aguardando...";
 
@@ -60,12 +61,10 @@ struct EspEntity {
 inline std::vector<EspEntity> g_EspEntities;
 inline std::mutex g_EspMutex;
 
-// OTIMIZADO: vm_read_overwrite já é seguro contra crash de endereço inválido.
 template <typename T>
 T ReadMemory(uintptr_t address) {
     T data = T();
     if (address == 0) return T();
-    
     vm_size_t size = sizeof(T);
     if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
         return T();
@@ -83,8 +82,6 @@ void WriteMemory(uintptr_t address, T data) {
 inline Vector3 GetEntityPosition(uintptr_t player) {
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
-    
-    // Leitura direta do Transform (Posicao de mundo)
     return ReadMemory<Vector3>(trans + 0x90);
 }
 
