@@ -35,10 +35,10 @@ mach_port_t get_task_port(const char* process_name) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
     size_t size;
     if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0) return MACH_PORT_NULL;
-    
+
     struct kinfo_proc *info = (struct kinfo_proc *)malloc(size);
     if (!info) return MACH_PORT_NULL;
-    
+
     if (sysctl(mib, 4, info, &size, NULL, 0) < 0) {
         free(info);
         return MACH_PORT_NULL;
@@ -66,7 +66,7 @@ mach_port_t get_task_port(const char* process_name) {
 uintptr_t GetUnityBase() {
     if (g_TaskPort == MACH_PORT_NULL) return 0;
     Log("[*] Buscando UnityBase...");
-    
+
     vm_address_t address = 0;
     vm_size_t size = 0;
     natural_t depth = 0;
@@ -203,18 +203,36 @@ uintptr_t FindStaticMatchGame() {
                     for (vm_address_t chunk_addr = address; chunk_addr < address + size; chunk_addr += chunk_size) {
                         vm_size_t readSize = (address + size - chunk_addr > chunk_size) ? chunk_size : (address + size - chunk_addr);
                         if (vm_read_overwrite(g_TaskPort, chunk_addr, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                            for (vm_size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
-                                if (buffer[i] == string_addr) {
-                                    uintptr_t candidate = chunk_addr + (i * sizeof(uintptr_t)) - 0x10;
-                                    uintptr_t static_fields = ReadMemory<uintptr_t>(candidate + 0xB8);
-                                    
-                                    // Valida se o static_fields ta num endereco de heap valido
-                                    if (static_fields > 0x100000000 && static_fields < 0x800000000000) {
-                                        class_ptr = candidate;
-                                        g_GameFacadeStatic = static_fields;
-                                        break;
+                            // Fase 2: varredura de offsets para name e static_fields
+                            const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00};
+                            const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98};
+
+                            for (size_t i = 0; i < readSize / sizeof(uintptr_t); i++) {
+                                if (buffer[i] != string_addr) continue;
+
+                                uintptr_t ptr_addr = chunk_addr + (i * sizeof(uintptr_t));
+
+                                for (uintptr_t name_off : name_offsets) {
+                                    if (ptr_addr < name_off) continue;
+                                    uintptr_t candidate = ptr_addr - name_off;
+                                    if (candidate < chunk_addr) continue;
+
+                                    uintptr_t image = ReadMemory<uintptr_t>(candidate + 0x00);
+                                    if (image < 0x100000000 || image > 0x1000000000000) continue;
+
+                                    for (uintptr_t sf_off : static_offsets) {
+                                        uintptr_t sf = ReadMemory<uintptr_t>(candidate + sf_off);
+                                        if (sf > 0x100000000 && sf < 0x1000000000000) {
+                                            class_ptr = candidate;
+                                            g_GameFacadeStatic = sf;
+                                            Log("[+] Il2CppClass VALIDADO: name_off=0x" + std::to_string(name_off)
+                                                + " sf_off=0x" + std::to_string(sf_off));
+                                            break;
+                                        }
                                     }
+                                    if (class_ptr != 0) break;
                                 }
+                                if (class_ptr != 0) break;
                             }
                         }
                         if (class_ptr != 0) break;
@@ -241,7 +259,7 @@ uintptr_t FindStaticMatchGame() {
         Log("[-] MatchGame NULL (Fora de partida, aguardando...).");
         return 0;
     }
-    
+
     Log("[+] GameFacade OK! MatchGame: 0x" + std::to_string(matchGame));
     return matchGame;
 }
