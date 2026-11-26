@@ -39,9 +39,9 @@ extern "C" void set_log_path(const char* path);
         std::lock_guard<std::mutex> lk(g_EspMutex);
         for (const auto& e : g_EspEntities) {
             float x = e.headPos.x;
-            float y = rect.size.height - e.headPos.y;
+            float y = rect.size.height - e.headPos.y; 
             float w = 50.0f;
-            float h = (rect.size.height - e.footPos.y) - y;
+            float h = (rect.size.height - e.footPos.y) - y; 
 
             if (h > 0 && h < 1000) { 
                 if (g_Config.espBox) {
