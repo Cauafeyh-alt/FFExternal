@@ -134,7 +134,7 @@ uintptr_t FindStaticMatchGame() {
 
     Log("[*] Iniciando Pattern Scan (GameFacade)...");
 
-    vm_address_t address = g_UnityBase;
+    vm_address_t address = 0x100000000; // <-- FIX AQUI (Fase 1)
     vm_size_t size = 0;
     natural_t depth = 0;
     struct vm_region_submap_info_64 info;
@@ -187,7 +187,7 @@ uintptr_t FindStaticMatchGame() {
 
     // 2. Busca o ponteiro pra string (Il2CppClass) TAMBEM EM CHUNKS
     uintptr_t class_ptr = 0;
-    address = g_UnityBase;
+    address = 0x100000000; // <-- FIX AQUI (Fase 2)
     regiao_idx = 0;
     Log("[*] Procurando Il2CppClass (Fase 2)...");
 
