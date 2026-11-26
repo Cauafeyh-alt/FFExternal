@@ -5,7 +5,6 @@
 #include <mutex>
 #include <string>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <mach/vm_map.h>
 #include <mach-o/loader.h>
 #include "offset.hpp"
@@ -60,10 +59,10 @@ inline std::mutex g_EspMutex;
 
 template <typename T>
 T ReadMemory(uintptr_t address) {
-    T data{};
+    T data = T();
     vm_size_t size = sizeof(T);
     if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
-        return T{};
+        return T();
     }
     return data;
 }
