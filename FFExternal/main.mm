@@ -43,7 +43,7 @@ extern "C" void set_log_path(const char* path);
             float w = 50.0f;
             float h = (rect.size.height - e.footPos.y) - y;
 
-            if (h > 0) {
+            if (h > 0 && h < 1000) { 
                 if (g_Config.espBox) {
                     CGContextSetRGBStrokeColor(ctx, 1.0, 0.0, 0.0, 1.0);
                     CGContextSetLineWidth(ctx, 2.0);
@@ -52,12 +52,12 @@ extern "C" void set_log_path(const char* path);
 
                 if (g_Config.espHealth) {
                     float hpWidth = 5.0f;
-                    float hpHeight = h;
-                    float hpPercentage = (float)e.health / 200.0f;
+                    float hpPercentage = (float)e.health / 100.0f; 
                     if (hpPercentage > 1.0f) hpPercentage = 1.0f;
+                    if (hpPercentage < 0.0f) hpPercentage = 0.0f;
                     
                     CGContextSetRGBFillColor(ctx, 0.0, 1.0, 0.0, 1.0);
-                    CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (hpHeight * (1.0f - hpPercentage)), hpWidth, hpHeight * hpPercentage));
+                    CGContextFillRect(ctx, CGRectMake(x - (w/2) - 10, y + (h * (1.0f - hpPercentage)), hpWidth, h * hpPercentage));
                 }
             }
         }
@@ -195,7 +195,12 @@ extern "C" void set_log_path(const char* path);
 
     [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer * _Nonnull timer) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.debugLabel.text = [NSString stringWithUTF8String:g_DebugInfo.c_str()];
+            std::string safeStr;
+            {
+                std::lock_guard<std::mutex> lk(g_PlayerMutex);
+                safeStr = g_DebugInfo;
+            }
+            self.debugLabel.text = [NSString stringWithUTF8String:safeStr.c_str()];
         });
     }];
 }
@@ -224,6 +229,10 @@ extern "C" void set_log_path(const char* path);
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     
+    CGSize screenSize = [UIScreen mainScreen].bounds.size;
+    g_ScreenWidth = (int)MAX(screenSize.width, screenSize.height);
+    g_ScreenHeight = (int)MIN(screenSize.width, screenSize.height);
+
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     self.window.rootViewController = [[ViewController alloc] init];
     [self.window makeKeyAndVisible];
