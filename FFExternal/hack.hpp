@@ -5,6 +5,9 @@
 #include <mutex>
 #include <string>
 #include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach/vm_map.h>
+#include <mach-o/loader.h>
 #include "offset.hpp"
 
 void Log(const std::string& msg);
@@ -57,10 +60,10 @@ inline std::mutex g_EspMutex;
 
 template <typename T>
 T ReadMemory(uintptr_t address) {
-    T data;
+    T data{};
     vm_size_t size = sizeof(T);
     if (vm_read_overwrite(g_TaskPort, (vm_address_t)address, size, (vm_address_t)&data, &size) != KERN_SUCCESS) {
-        return T();
+        return T{};
     }
     return data;
 }
@@ -74,7 +77,7 @@ void WriteMemory(uintptr_t address, T data) {
 inline Vector3 GetEntityPosition(uintptr_t player) {
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
-    return ReadMemory<Vector3>(trans + 0x90); 
+    return ReadMemory<Vector3>(trans + 0x90);
 }
 
 mach_port_t get_task_port(const char* process_name);
