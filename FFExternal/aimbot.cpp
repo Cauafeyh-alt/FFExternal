@@ -13,6 +13,10 @@ Quaternion EulerToQuaternion(float pitch, float yaw, float roll) {
 Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
     float dot = q1.x*q2.x + q1.y*q2.y + q1.z*q2.z + q1.w*q2.w;
     if (dot < 0.0f) { q2.x = -q2.x; q2.y = -q2.y; q2.z = -q2.z; q2.w = -q2.w; dot = -dot; }
+    
+    // FIX FATAL: Previne a divisao por zero se a mira ja estiver no alvo
+    if (dot > 0.9995f) return q2; 
+    
     float theta_0 = acosf(dot), theta = theta_0 * t;
     float sin_theta = sinf(theta), sin_theta_0 = sinf(theta_0);
     float s0 = cosf(theta) - dot * sin_theta / sin_theta_0;
@@ -29,7 +33,7 @@ void AimbotThread() {
         {
             std::lock_guard<std::mutex> lk(g_PlayerMutex);
             localPlayer = g_LocalPlayer;
-            localPlayers = g_Players; // Copia a lista de forma segura
+            localPlayers = g_Players; // Copia segura
         }
         
         if (localPlayer == 0 || localPlayers.empty()) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue; }
