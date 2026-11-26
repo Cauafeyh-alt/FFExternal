@@ -1,0 +1,9 @@
+Package: com.ollie.ffexternal
+Name: FFExternal
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: external hud
+Maintainer: ollie
+Author: ollie
+Section: Applications
+Depends: firmware (>= 14.0)
