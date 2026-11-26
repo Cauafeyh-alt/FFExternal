@@ -36,11 +36,8 @@ void HackLoop() {
         uintptr_t camMgr = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::MatchGame_CameraModeMgr);
         if (camMgr) { g_GameCamera = ReadMemory<uintptr_t>(camMgr + Offsets::CameraControllerMgr_GameCamera); }
 
-        {
-            std::lock_guard<std::mutex> lk(g_PlayerMutex);
-            g_Players.clear();
-            g_LocalPlayer = 0;
-        }
+        std::vector<uintptr_t> tempPlayers;
+        uintptr_t tempLocal = 0;
 
         uintptr_t matchObj = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::MatchGame_M_Match);
         
@@ -50,14 +47,13 @@ void HackLoop() {
                 uintptr_t playerArray = ReadMemory<uintptr_t>(playerList + 0x10); 
                 int playerCount = ReadMemory<int>(playerList + 0x18);
                 
-                std::lock_guard<std::mutex> lk(g_PlayerMutex);
                 if (playerArray && playerCount > 0 && playerCount < 100) {
                     for (int i = 0; i < playerCount; i++) {
                         uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
                         if (player) {
-                            g_Players.push_back(player);
+                            tempPlayers.push_back(player);
                             uintptr_t camTrans = ReadMemory<uintptr_t>(player + Offsets::Player_MainCameraTransform);
-                            if (camTrans != 0) g_LocalPlayer = player; 
+                            if (camTrans != 0) tempLocal = player; 
                         }
                     }
                 }
@@ -68,7 +64,6 @@ void HackLoop() {
                 uintptr_t entriesPtr = ReadMemory<uintptr_t>(dictPtr + 0x18); 
                 int count = ReadMemory<int>(dictPtr + 0x20); 
                 
-                std::lock_guard<std::mutex> lk(g_PlayerMutex);
                 if (entriesPtr && count > 0 && count < 300) {
                     for (int i = 0; i < count; i++) {
                         uintptr_t entry = entriesPtr + 0x20 + (i * 0x18); 
@@ -76,9 +71,9 @@ void HackLoop() {
                         if (entity) {
                             int hp = ReadMemory<int>(entity + Offsets::Player_HP_Candidate);
                             if (hp > 0 && hp <= 1000) {
-                                g_Players.push_back(entity);
+                                tempPlayers.push_back(entity);
                                 uintptr_t camTrans = ReadMemory<uintptr_t>(entity + Offsets::Player_MainCameraTransform);
-                                if (camTrans != 0) g_LocalPlayer = entity;
+                                if (camTrans != 0) tempLocal = entity;
                             }
                         }
                     }
@@ -86,10 +81,19 @@ void HackLoop() {
             }
         }
 
-        std::lock_guard<std::mutex> lk(g_PlayerMutex);
-        if (!g_Players.empty()) {
-            g_DebugInfo = "Players: " + std::to_string(g_Players.size()) + " | Local: " + std::to_string(g_LocalPlayer != 0);
+        // ATUALIZA GLOBAL COM LOCK RÁPIDO
+        {
+            std::lock_guard<std::mutex> lk(g_PlayerMutex);
+            g_Players = std::move(tempPlayers);
+            g_LocalPlayer = tempLocal;
+            
+            if (!g_Players.empty()) {
+                g_DebugInfo = "Players: " + std::to_string(g_Players.size()) + " | Local: " + std::to_string(g_LocalPlayer != 0);
+            } else {
+                g_DebugInfo = "Players: 0";
+            }
         }
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
