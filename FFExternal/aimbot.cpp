@@ -22,9 +22,19 @@ Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
 
 void AimbotThread() {
     while (g_Running) {
-        if (!g_Config.aimbotEnabled || g_LocalPlayer == 0) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue; }
+        if (!g_Config.aimbotEnabled) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue; }
         
-        Vector3 localPos = GetEntityPosition(g_LocalPlayer);
+        uintptr_t localPlayer;
+        std::vector<uintptr_t> localPlayers;
+        {
+            std::lock_guard<std::mutex> lk(g_PlayerMutex);
+            localPlayer = g_LocalPlayer;
+            localPlayers = g_Players; // Copia a lista de forma segura
+        }
+        
+        if (localPlayer == 0 || localPlayers.empty()) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue; }
+        
+        Vector3 localPos = GetEntityPosition(localPlayer);
         uintptr_t bestTarget = 0;
         float bestDist = g_Config.aimRange;
         Vector3 bestTargetPos;
@@ -32,12 +42,11 @@ void AimbotThread() {
         Matrix4x4 vm = GetViewMatrix();
         bool hasVM = (vm.m[0][0] != 0);
         
-        std::lock_guard<std::mutex> lk(g_PlayerMutex);
-        for (uintptr_t p : g_Players) {
-            if (p == g_LocalPlayer) continue;
+        for (uintptr_t p : localPlayers) {
+            if (p == localPlayer) continue;
             if (ReadMemory<bool>(p + Offsets::Player_IsClientBot)) continue;
             
-            uintptr_t myTeam = ReadMemory<uintptr_t>(g_LocalPlayer + Offsets::Player_TeamModeID);
+            uintptr_t myTeam = ReadMemory<uintptr_t>(localPlayer + Offsets::Player_TeamModeID);
             uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
             if (myTeam != 0 && myTeam == enemyTeam) continue; 
 
@@ -70,10 +79,10 @@ void AimbotThread() {
             float yaw = std::atan2(dir.x, dir.z) * (180.0f / M_PI);
 
             Quaternion targetRot = EulerToQuaternion(-pitch, yaw, 0.0f);
-            Quaternion currentRot = ReadMemory<Quaternion>(g_LocalPlayer + Offsets::Player_CurrentAimRotation);
+            Quaternion currentRot = ReadMemory<Quaternion>(localPlayer + Offsets::Player_CurrentAimRotation);
             
             Quaternion newRot = Slerp(currentRot, targetRot, 0.15f);
-            WriteMemory<Quaternion>(g_LocalPlayer + Offsets::Player_CurrentAimRotation, newRot);
+            WriteMemory<Quaternion>(localPlayer + Offsets::Player_CurrentAimRotation, newRot);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
