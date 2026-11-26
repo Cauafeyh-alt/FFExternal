@@ -31,7 +31,6 @@ struct Config {
     float aimFOV = 120.0f;
     float aimRange = 500.0f;
     bool drawFOV = false;
-
     bool espEnabled = false;
     bool espBox = true;
     bool espHealth = true;
@@ -48,6 +47,10 @@ extern mach_port_t g_TaskPort;
 extern uintptr_t g_UnityBase;
 extern uintptr_t g_GameCamera;
 extern uintptr_t g_StaticMatchGame;
+extern uintptr_t g_GameFacadeStatic;
+
+extern int g_ScreenWidth;
+extern int g_ScreenHeight;
 
 struct EspEntity {
     Vector2 headPos;
@@ -76,12 +79,14 @@ void WriteMemory(uintptr_t address, T data) {
 inline Vector3 GetEntityPosition(uintptr_t player) {
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
-    return ReadMemory<Vector3>(trans + 0x90);
+    return ReadMemory<Vector3>(trans + 0x90); 
 }
 
 mach_port_t get_task_port(const char* process_name);
 uintptr_t GetUnityBase();
 uintptr_t FindStaticMatchGame();
+Matrix4x4 GetViewMatrix();
+bool WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, int height);
 
 void HackLoop();
 void AimbotThread();
