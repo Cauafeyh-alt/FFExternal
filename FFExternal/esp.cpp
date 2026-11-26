@@ -31,7 +31,7 @@ void EspThread() {
         {
             std::lock_guard<std::mutex> lk(g_PlayerMutex);
             localPlayer = g_LocalPlayer;
-            localPlayers = g_Players; // Copia a lista
+            localPlayers = g_Players;
         }
 
         if (g_GameCamera == 0 || localPlayer == 0 || localPlayers.empty()) {
@@ -66,8 +66,11 @@ void EspThread() {
             }
         }
         
-        std::lock_guard<std::mutex> espLk(g_EspMutex);
-        g_EspEntities = std::move(tempEntities);
+        { // FIX: Escopo pro lock soltar antes do sleep
+            std::lock_guard<std::mutex> espLk(g_EspMutex);
+            g_EspEntities = std::move(tempEntities);
+        }
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
