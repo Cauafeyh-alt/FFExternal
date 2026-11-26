@@ -3,43 +3,50 @@
 #include <chrono>
 #include <string>
 
-int g_ScreenWidth = 1920;
-int g_ScreenHeight = 1080;
-
 void HackLoop() {
     Log("=== HackLoop Iniciado ===");
     { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: Iniciando Threads..."; }
     
-    while (g_Running) {
-        if (g_TaskPort == MACH_PORT_NULL) {
-            g_TaskPort = get_task_port("FreeFire");
-            if (g_TaskPort == MACH_PORT_NULL) {
+    while (g_Running.load(std::memory_order_acquire)) {
+        mach_port_t tp = GetTaskPort();
+        if (tp == MACH_PORT_NULL) {
+            tp = get_task_port("FreeFire");
+            if (tp == MACH_PORT_NULL) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: TaskPort NULL"; }
                 std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
             }
+            SetTaskPort(tp);
         }
-        if (g_UnityBase == 0) {
-            g_UnityBase = GetUnityBase();
-            if (g_UnityBase == 0) {
+        
+        uintptr_t ub = GetUnityBase();
+        if (ub == 0) {
+            ub = FindUnityBase();
+            if (ub == 0) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: UnityBase nao achado"; }
                 std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
             }
+            SetUnityBase(ub);
         }
-        if (g_StaticMatchGame == 0) {
-            g_StaticMatchGame = FindStaticMatchGame();
-            if (g_StaticMatchGame == 0) {
+        
+        uintptr_t matchGame = GetStaticMatchGame();
+        if (matchGame == 0) {
+            matchGame = FindStaticMatchGame();
+            if (matchGame == 0) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: MatchGame nao achado"; }
                 std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
             }
+            SetStaticMatchGame(matchGame);
         }
 
-        uintptr_t camMgr = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::MatchGame_CameraModeMgr);
-        if (camMgr) { g_GameCamera = ReadMemory<uintptr_t>(camMgr + Offsets::CameraControllerMgr_GameCamera); }
+        uintptr_t camMgr = ReadMemory<uintptr_t>(matchGame + Offsets::MatchGame_CameraModeMgr);
+        if (camMgr) {
+            SetGameCamera(ReadMemory<uintptr_t>(camMgr + Offsets::CameraControllerMgr_GameCamera));
+        }
 
         std::vector<uintptr_t> tempPlayers;
         uintptr_t tempLocal = 0;
 
-        uintptr_t matchObj = ReadMemory<uintptr_t>(g_StaticMatchGame + Offsets::MatchGame_M_Match);
+        uintptr_t matchObj = ReadMemory<uintptr_t>(matchGame + Offsets::MatchGame_M_Match);
         
         if (matchObj) {
             uintptr_t playerList = ReadMemory<uintptr_t>(matchObj + Offsets::JM_PlayerList);
@@ -59,7 +66,7 @@ void HackLoop() {
                 }
             }
         } else {
-            uintptr_t dictPtr = ReadMemory<uintptr_t>(g_StaticMatchGame + 0xC0);
+            uintptr_t dictPtr = ReadMemory<uintptr_t>(matchGame + 0xC0);
             if (dictPtr) {
                 uintptr_t entriesPtr = ReadMemory<uintptr_t>(dictPtr + 0x18); 
                 int count = ReadMemory<int>(dictPtr + 0x20); 
@@ -81,14 +88,14 @@ void HackLoop() {
             }
         }
 
-        // ATUALIZA GLOBAL COM LOCK RÁPIDO
+        // Update global state safely using accessors and lock
         {
             std::lock_guard<std::mutex> lk(g_PlayerMutex);
             g_Players = std::move(tempPlayers);
-            g_LocalPlayer = tempLocal;
+            SetLocalPlayer(tempLocal);
             
             if (!g_Players.empty()) {
-                g_DebugInfo = "Players: " + std::to_string(g_Players.size()) + " | Local: " + std::to_string(g_LocalPlayer != 0);
+                g_DebugInfo = "Players: " + std::to_string(g_Players.size()) + " | Local: " + std::to_string(GetLocalPlayer() != 0);
             } else {
                 g_DebugInfo = "Players: 0";
             }
