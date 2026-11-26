@@ -38,7 +38,6 @@ mach_port_t get_task_port(const char* process_name) {
     for (int i = 0; i < count; i++) {
         if (strstr(info[i].kp_proc.p_comm, process_name) != NULL) {
             pid = info[i].kp_proc.p_pid;
-            Log("[+] Processo encontrado! PID: " + std::to_string(pid));
             break;
         }
     }
@@ -47,7 +46,6 @@ mach_port_t get_task_port(const char* process_name) {
 
     mach_port_t task = MACH_PORT_NULL;
     if (task_for_pid(mach_task_self(), pid, &task) != KERN_SUCCESS) return MACH_PORT_NULL;
-    Log("[+] task_for_pid SUCESSO!");
     return task;
 }
 
@@ -55,7 +53,6 @@ uintptr_t FindUnityBase() {
     mach_port_t tp = GetTaskPort();
     if (tp == MACH_PORT_NULL) return 0;
 
-    Log("[*] Buscando UnityBase...");
     vm_address_t address = 0;
     vm_size_t size = 0;
     natural_t depth = 0;
@@ -64,42 +61,39 @@ uintptr_t FindUnityBase() {
 
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
-        kern_return_t kr = vm_region_recurse_64(tp, &address, &size, &depth,
-                                                (vm_region_recurse_info_t)&info, &count);
-        if (kr != KERN_SUCCESS) break;
+        if (vm_region_recurse_64(tp, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
 
         if (info.is_submap) { depth++; }
         else if (info.protection & VM_PROT_READ) {
             struct mach_header_64 header;
             vm_size_t readSize = sizeof(header);
-            if (vm_read_overwrite(tp, address, readSize,
-                                  (vm_address_t)&header, &readSize) == KERN_SUCCESS
+            if (vm_read_overwrite(tp, address, readSize, (vm_address_t)&header, &readSize) == KERN_SUCCESS
                 && readSize == sizeof(header) && header.magic == MH_MAGIC_64) {
 
                 vm_size_t cmdsSize = header.sizeofcmds;
                 if (cmdsSize > 0 && cmdsSize < 0x10000) {
                     char* cmds = (char*)malloc(cmdsSize);
-                    if (cmds && vm_read_overwrite(tp, address + sizeof(header), cmdsSize,
-                                                  (vm_address_t)cmds, &cmdsSize) == KERN_SUCCESS) {
+                    if (cmds && vm_read_overwrite(tp, address + sizeof(header), cmdsSize, (vm_address_t)cmds, &cmdsSize) == KERN_SUCCESS) {
                         char* ptr = cmds;
-                        bool found = false; // <-- AQUI: Declarado fora do loop pra ter escopo
+                        bool found = false;
                         for (uint32_t i = 0; i < header.ncmds && !found; i++) {
                             if (ptr + sizeof(struct load_command) > cmds + cmdsSize) break;
                             struct load_command* lc = (struct load_command*)ptr;
                             if (lc->cmdsize == 0 || ptr + lc->cmdsize > cmds + cmdsSize) break;
                             if (lc->cmd == LC_ID_DYLIB) {
                                 struct dylib_command* dy = (struct dylib_command*)lc;
-                                char* name = (char*)lc + dy->dylib.name.offset;
-                                if (name >= (char*)lc && name < (char*)lc + lc->cmdsize
-                                    && strstr(name, "UnityFramework")) { found = true; }
+                                uint32_t name_off = dy->dylib.name.offset;
+                                if (name_off < lc->cmdsize) {
+                                    char* name = (char*)lc + name_off;
+                                    size_t max_len = lc->cmdsize - name_off;
+                                    // Busca segura dentro do limite do comando
+                                    if (strnstr(name, "UnityFramework", max_len)) { found = true; }
+                                }
                             }
                             ptr += lc->cmdsize;
                         }
                         free(cmds);
-                        if (found) {
-                            Log("[+] UnityFramework (self-id) em: 0x" + std::to_string(address));
-                            return address;
-                        }
+                        if (found) return address;
                     } else if (cmds) {
                         free(cmds);
                     }
@@ -108,7 +102,6 @@ uintptr_t FindUnityBase() {
         }
         address += size;
     }
-    Log("[-] UnityFramework nao encontrado.");
     return 0;
 }
 
@@ -118,23 +111,19 @@ uintptr_t FindStaticMatchGame() {
     if (tp == MACH_PORT_NULL || ub == 0) return 0;
 
     uintptr_t cachedFacade = GetGameFacadeStatic();
-    if (cachedFacade != 0) {
-        return ReadMemory<uintptr_t>(cachedFacade + 0x8);
-    }
+    if (cachedFacade != 0) return ReadMemory<uintptr_t>(cachedFacade + 0x8);
 
-    Log("[*] Pattern scan 1/2: string \"GameFacade\"...");
     uintptr_t string_addr = 0;
     {
-        vm_address_t address = 0x100000000;
-        vm_size_t size = 0;
+        vm_address_t address = ub; // RESTRINGINDO A BUSCA AO MÓDULO UNITY
+        vm_size_t size = 0; // o proximo loop sobrescreve
         natural_t depth = 0;
         struct vm_region_submap_info_64 info;
         mach_msg_type_number_t count;
 
         while (true) {
             count = VM_REGION_SUBMAP_INFO_COUNT_64;
-            if (vm_region_recurse_64(tp, &address, &size, &depth,
-                                     (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
+            if (vm_region_recurse_64(tp, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
             if (info.is_submap) { depth++; }
             else if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
                 const vm_size_t CHUNK = 4 * 1024 * 1024;
@@ -160,14 +149,12 @@ uintptr_t FindStaticMatchGame() {
             address += size;
         }
     }
-    if (string_addr == 0) { Log("[-] GameFacade nao encontrada."); return 0; }
-    Log("[+] GameFacade string: 0x" + std::to_string(string_addr));
+    if (string_addr == 0) return 0;
 
-    Log("[*] Pattern scan 2/2: Il2CppClass...");
     uintptr_t class_ptr = 0;
     uintptr_t static_fields = 0;
     {
-        vm_address_t address = 0x100000000;
+        vm_address_t address = ub; // AQUI TAMBÉM
         vm_size_t size = 0;
         natural_t depth = 0;
         struct vm_region_submap_info_64 info;
@@ -175,8 +162,7 @@ uintptr_t FindStaticMatchGame() {
 
         while (true) {
             count = VM_REGION_SUBMAP_INFO_COUNT_64;
-            if (vm_region_recurse_64(tp, &address, &size, &depth,
-                                     (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
+            if (vm_region_recurse_64(tp, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
             if (info.is_submap) { depth++; }
             else if ((info.protection & VM_PROT_READ) == VM_PROT_READ) {
                 const vm_size_t CHUNK = 4 * 1024 * 1024;
@@ -197,15 +183,14 @@ uintptr_t FindStaticMatchGame() {
                                 if (ptr_addr < name_off) continue;
                                 uintptr_t cand = ptr_addr - name_off;
                                 if (cand < chunk) continue;
-                                uintptr_t image = ReadMemory<uintptr_t>(cand + 0x00);
+                                uintptr_t image;
+                                if (!ReadMemory<uintptr_t>(cand + 0x00, image)) continue;
                                 if (image < 0x100000000 || image > 0x1000000000000) continue;
                                 for (uintptr_t sf_off : static_offsets) {
-                                    uintptr_t sf = ReadMemory<uintptr_t>(cand + sf_off);
-                                    if (sf > 0x100000000 && sf < 0x1000000000000) {
+                                    uintptr_t sf;
+                                    if (ReadMemory<uintptr_t>(cand + sf_off, sf) && sf > 0x100000000 && sf < 0x1000000000000) {
                                         class_ptr = cand;
                                         static_fields = sf;
-                                        Log("[+] Il2CppClass name_off=0x" + std::to_string(name_off)
-                                            + " sf_off=0x" + std::to_string(sf_off));
                                         break;
                                     }
                                 }
@@ -221,11 +206,10 @@ uintptr_t FindStaticMatchGame() {
             address += size;
         }
     }
-    if (class_ptr == 0) { Log("[-] Il2CppClass nao validada."); return 0; }
+    if (class_ptr == 0) return 0;
 
     SetGameFacadeStatic(static_fields);
-    uintptr_t matchGame = ReadMemory<uintptr_t>(static_fields + 0x8);
-    if (matchGame == 0) { Log("[-] MatchGame NULL (fora de partida)."); return 0; }
-    Log("[+] MatchGame: 0x" + std::to_string(matchGame));
+    uintptr_t matchGame;
+    if (!ReadMemory<uintptr_t>(static_fields + 0x8, matchGame) || matchGame == 0) return 0;
     return matchGame;
 }
