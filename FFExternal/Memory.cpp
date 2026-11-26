@@ -134,7 +134,7 @@ uintptr_t FindStaticMatchGame() {
 
     Log("[*] Iniciando Pattern Scan (GameFacade)...");
 
-    vm_address_t address = 0x100000000; // <-- FIX AQUI (Fase 1)
+    vm_address_t address = 0x100000000;
     vm_size_t size = 0;
     natural_t depth = 0;
     struct vm_region_submap_info_64 info;
@@ -143,7 +143,6 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t string_addr = 0;
     int regiao_idx = 0;
 
-    // 1. Busca a string "GameFacade" em chunks de 4MB
     while (true) {
         count = VM_REGION_SUBMAP_INFO_COUNT_64;
         if (vm_region_recurse_64(g_TaskPort, &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS) break;
@@ -156,14 +155,12 @@ uintptr_t FindStaticMatchGame() {
                     for (vm_address_t chunk_addr = address; chunk_addr < address + size; chunk_addr += chunk_size) {
                         vm_size_t readSize = (address + size - chunk_addr > chunk_size) ? chunk_size : (address + size - chunk_addr);
                         if (vm_read_overwrite(g_TaskPort, chunk_addr, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                            for (vm_size_t i = 0; i < readSize - 15; i++) {
-                                if (memcmp(buffer + i, "GameFacade", 10) == 0 && buffer[i+10] == '\0') {
-                                    string_addr = chunk_addr + i;
-                                    break;
-                                }
-                                if (memcmp(buffer + i, "COW.GameFacade", 14) == 0 && buffer[i+14] == '\0') {
-                                    string_addr = chunk_addr + i;
-                                    break;
+                            if (readSize > 15) { // FIX: Evita underflow de unsigned
+                                for (vm_size_t i = 0; i < readSize - 15; i++) {
+                                    if (memcmp(buffer + i, "GameFacade", 10) == 0 && buffer[i+10] == '\0') {
+                                        string_addr = chunk_addr + i;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -185,9 +182,8 @@ uintptr_t FindStaticMatchGame() {
     }
     Log("[+] String encontrada em: 0x" + std::to_string(string_addr));
 
-    // 2. Busca o ponteiro pra string (Il2CppClass) TAMBEM EM CHUNKS
     uintptr_t class_ptr = 0;
-    address = 0x100000000; // <-- FIX AQUI (Fase 2)
+    address = 0x100000000;
     regiao_idx = 0;
     Log("[*] Procurando Il2CppClass (Fase 2)...");
 
@@ -203,7 +199,6 @@ uintptr_t FindStaticMatchGame() {
                     for (vm_address_t chunk_addr = address; chunk_addr < address + size; chunk_addr += chunk_size) {
                         vm_size_t readSize = (address + size - chunk_addr > chunk_size) ? chunk_size : (address + size - chunk_addr);
                         if (vm_read_overwrite(g_TaskPort, chunk_addr, readSize, (vm_address_t)buffer, &readSize) == KERN_SUCCESS) {
-                            // Fase 2: varredura de offsets para name e static_fields
                             const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00};
                             const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98};
 
@@ -255,6 +250,10 @@ uintptr_t FindStaticMatchGame() {
     Log("[+] static_fields em: 0x" + std::to_string(g_GameFacadeStatic));
 
     uintptr_t matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x8);
+    if (matchGame == 0) {
+        matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x0);
+    }
+    
     if (matchGame == 0) {
         Log("[-] MatchGame NULL (Fora de partida, aguardando...).");
         return 0;
