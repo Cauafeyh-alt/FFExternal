@@ -37,7 +37,6 @@ struct Config {
     bool espHealth = true;
 };
 
-// ---- Config: mutex-protected. All reads via GetConfig(); writes via UpdateConfig.
 inline Config        g_Config;
 inline std::mutex    g_ConfigMtx;
 inline Config GetConfig() {
@@ -50,7 +49,6 @@ inline void UpdateConfig(F&& f) {
     f(g_Config);
 }
 
-// ---- Shared game state: atomics. Named accessors, release/acquire.
 inline std::atomic<uintptr_t>      g_LocalPlayerAtomic{0};
 inline std::atomic<uintptr_t>      g_UnityBaseAtomic{0};
 inline std::atomic<uintptr_t>      g_GameCameraAtomic{0};
@@ -84,45 +82,51 @@ struct EspEntity { Vector2 headPos; Vector2 footPos; float health; };
 inline std::vector<EspEntity> g_EspEntities;
 inline std::mutex             g_EspMutex;
 
-// ---- ReadMemory: verify vm_read wrote the full sizeof(T). Silent on miss.
+// ReadMemory agora retorna status
+template <typename T>
+bool ReadMemory(uintptr_t address, T& outData) {
+    outData = T();
+    if (address == 0) return false;
+    mach_port_t tp = g_TaskPortAtomic.load(std::memory_order_acquire);
+    if (tp == MACH_PORT_NULL) return false;
+    vm_size_t size = sizeof(T);
+    if (vm_read_overwrite(tp, (vm_address_t)address, size, (vm_address_t)&outData, &size) != KERN_SUCCESS) return false;
+    return size == sizeof(T);
+}
+
+// Wrapper antigo pra compatibilidade com o código atual
 template <typename T>
 T ReadMemory(uintptr_t address) {
-    T data = T();
-    if (address == 0) return T();
-    mach_port_t tp = g_TaskPortAtomic.load(std::memory_order_acquire);
-    if (tp == MACH_PORT_NULL) return T();
-    vm_size_t size = sizeof(T);
-    if (vm_read_overwrite(tp, (vm_address_t)address, size,
-                          (vm_address_t)&data, &size) != KERN_SUCCESS) return T();
-    if (size != sizeof(T)) return T();   // partial read = miss
+    T data;
+    ReadMemory(address, data);
     return data;
 }
 
+// WriteMemory agora retorna status
 template <typename T>
-void WriteMemory(uintptr_t address, T data) {
-    if (address == 0) return;
+bool WriteMemory(uintptr_t address, const T& data) {
+    if (address == 0) return false;
     mach_port_t tp = g_TaskPortAtomic.load(std::memory_order_acquire);
-    if (tp == MACH_PORT_NULL) return;
+    if (tp == MACH_PORT_NULL) return false;
     vm_size_t size = sizeof(T);
-    vm_write(tp, (vm_address_t)address, (vm_address_t)&data, size);
+    return vm_write(tp, (vm_address_t)address, (vm_address_t)&data, size) == KERN_SUCCESS;
 }
 
 inline Vector3 GetEntityPosition(uintptr_t player) {
-    uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
-    if (!trans) return {0, 0, 0};
-    return ReadMemory<Vector3>(trans + 0x90);
+    uintptr_t trans;
+    if (!ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform, trans) || !trans) return {0, 0, 0};
+    Vector3 pos;
+    if (!ReadMemory<Vector3>(trans + 0x90, pos)) return {0, 0, 0};
+    return pos;
 }
 
-// ---- Module / finder interfaces (defined in Memory.cpp)
 mach_port_t get_task_port(const char* process_name);
 uintptr_t   FindUnityBase();
 uintptr_t   FindStaticMatchGame();
 
-// ---- Helpers (esp.cpp, aimbot.cpp)
 Matrix4x4 GetViewMatrix();
 bool      WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, int height);
 
-// ---- Threads
 void HackLoop();
 void AimbotThread();
 void EspThread();
