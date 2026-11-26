@@ -79,7 +79,15 @@ void WriteMemory(uintptr_t address, T data) {
 inline Vector3 GetEntityPosition(uintptr_t player) {
     uintptr_t trans = ReadMemory<uintptr_t>(player + Offsets::Entity_CachedTransform);
     if (!trans) return {0, 0, 0};
-    return ReadMemory<Vector3>(trans + 0x90); 
+    
+    // Le o offset 0x90 (padrao Unity 2019+)
+    Vector3 pos = ReadMemory<Vector3>(trans + 0x90);
+    
+    // Fallback pro 0x38 caso a v31 tenha mudado a estrutura
+    if (pos.x == 0.0f && pos.y == 0.0f && pos.z == 0.0f) {
+        pos = ReadMemory<Vector3>(trans + 0x38);
+    }
+    return pos;
 }
 
 mach_port_t get_task_port(const char* process_name);
