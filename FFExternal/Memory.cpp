@@ -249,10 +249,7 @@ uintptr_t FindStaticMatchGame() {
     Log("[+] Il2CppClass VALIDADO em: 0x" + std::to_string(class_ptr));
     Log("[+] static_fields em: 0x" + std::to_string(g_GameFacadeStatic));
 
-    uintptr_t matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x8);
-    if (matchGame == 0) {
-        matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x0);
-    }
+        uintptr_t matchGame = ReadMemory<uintptr_t>(g_GameFacadeStatic + 0x8);
     
     if (matchGame == 0) {
         Log("[-] MatchGame NULL (Fora de partida, aguardando...).");
