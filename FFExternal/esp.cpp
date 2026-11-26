@@ -4,8 +4,9 @@
 
 Matrix4x4 GetViewMatrix() {
     Matrix4x4 mat = {};
-    if (g_GameCamera == 0) return mat;
-    return ReadMemory<Matrix4x4>(g_GameCamera + Offsets::Camera_ViewMatrix);
+    uintptr_t cam = GetGameCamera();
+    if (cam == 0) return mat;
+    return ReadMemory<Matrix4x4>(cam + Offsets::Camera_ViewMatrix);
 }
 
 bool WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, int height) {
@@ -21,8 +22,9 @@ bool WorldToScreen(Vector3 pos, Vector2& screen, Matrix4x4 matrix, int width, in
 }
 
 void EspThread() {
-    while (g_Running) {
-        if (!g_Config.espEnabled) {
+    while (g_Running.load(std::memory_order_acquire)) {
+        Config cfg = GetConfig();
+        if (!cfg.espEnabled) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
         }
         
@@ -30,11 +32,12 @@ void EspThread() {
         std::vector<uintptr_t> localPlayers;
         {
             std::lock_guard<std::mutex> lk(g_PlayerMutex);
-            localPlayer = g_LocalPlayer;
+            localPlayer = GetLocalPlayer();
             localPlayers = g_Players;
         }
 
-        if (g_GameCamera == 0 || localPlayer == 0 || localPlayers.empty()) {
+        uintptr_t cam = GetGameCamera();
+        if (cam == 0 || localPlayer == 0 || localPlayers.empty()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
         }
         
@@ -61,12 +64,12 @@ void EspThread() {
                 WorldToScreen(pos, fScreen, viewMatrix, g_ScreenWidth, g_ScreenHeight)) {
                 EspEntity e;
                 e.headPos = hScreen; e.footPos = fScreen;
-                e.health = ReadMemory<int>(p + Offsets::Player_HP_Candidate);
+                e.health = (float)ReadMemory<int>(p + Offsets::Player_HP_Candidate);
                 tempEntities.push_back(e);
             }
         }
         
-        { // FIX: Escopo pro lock soltar antes do sleep
+        { 
             std::lock_guard<std::mutex> espLk(g_EspMutex);
             g_EspEntities = std::move(tempEntities);
         }
