@@ -12,36 +12,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y git make clang xz-utils zip unzip libplist-dev libssl-dev libxml2-dev
-          
-          # Compila o ldid
+
+      - name: Compile ldid
+        run: |
           git clone https://github.com/ProcursusTeam/ldid.git
           cd ldid
           make
           sudo cp ./ldid /usr/local/bin/
           cd ..
-          
-          # Configura o Theos
-          export THEOS=$HOME/theos
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          
-          # Baixa os SDKs do iOS
-          mkdir -p $THEOS/sdks
-          curl -L -o $THEOS/sdks/master.zip https://github.com/theos/sdks/archive/master.zip
-          unzip -q $THEOS/sdks/master.zip -d $THEOS/sdks/
-          mv $THEOS/sdks/sdks-master/* $THEOS/sdks/
-          rm -rf $THEOS/sdks/sdks-master $THEOS/sdks/master.zip
 
-          # A MÁGICA: Engana o Theos linkando o clang do sistema
-          mkdir -p $THEOS/toolchain/linux/iphone/bin
-          ln -sf /usr/bin/clang $THEOS/toolchain/linux/iphone/bin/clang
-          ln -sf /usr/bin/clang++ $THEOS/toolchain/linux/iphone/bin/clang++
-          ln -sf /usr/bin/ld $THEOS/toolchain/linux/iphone/bin/ld
-          ln -sf /usr/bin/ar $THEOS/toolchain/linux/iphone/bin/ar
+      - name: Setup Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: 'theos'
+          theos-sdks: 'latest'
 
       - name: Build and Stage App
+        env:
+          THEOS: ${{ github.workspace }}/theos
         run: |
           cd FFExternal
-          export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
           make stage
 
