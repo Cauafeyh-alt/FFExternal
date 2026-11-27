@@ -279,11 +279,15 @@ extern "C" void set_log_path(const char* path);
 - (void)applicationWillTerminate:(UIApplication *)application {
     g_Running.store(false, std::memory_order_release);
     
-    // Thread coordenadora para evitar data race no join/detach
-    std::thread([this]() {
-        if (_hackThread.joinable())   _hackThread.join();
-        if (_aimbotThread.joinable()) _aimbotThread.join();
-        if (_espThread.joinable())    _espThread.join();
+    // Pega os ponteiros para as threads pra não ter que capturar o self (evita erro no clang do linux)
+    std::thread* h = &_hackThread;
+    std::thread* a = &_aimbotThread;
+    std::thread* e = &_espThread;
+    
+    std::thread([h, a, e]() {
+        if (h->joinable()) h->join();
+        if (a->joinable()) a->join();
+        if (e->joinable()) e->join();
         Log("[+] Threads encerradas pelo coordenador.");
     }).detach();
 }
