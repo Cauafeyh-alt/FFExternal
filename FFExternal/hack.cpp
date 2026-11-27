@@ -35,7 +35,7 @@ void HackLoop() {
             matchGame = FindStaticMatchGame();
             if (matchGame == 0) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: MatchGame nao achado"; }
-                std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
+                std::this_thread::sleep_for(std::chrono::seconds(2)); continue; // AUMENTADO AQUI
             }
             SetStaticMatchGame(matchGame);
         }
@@ -45,13 +45,8 @@ void HackLoop() {
         if (SafeAdd(matchGame, Offsets::MatchGame_CameraModeMgr, camMgr_field) && ReadMemory<uintptr_t>(camMgr_field, camMgr) && camMgr) {
             uintptr_t cam_field = 0;
             uintptr_t cam = 0;
-            if (SafeAdd(camMgr, Offsets::CameraControllerMgr_GameCamera, cam_field) && ReadMemory<uintptr_t>(cam_field, cam)) {
+            if (SafeAdd(camMgr, Offsets::CameraControllerMgr_GameCamera, cam_field) && ReadMemory<uintptr_t>(cam_field, cam) && cam) {
                 SetGameCamera(cam);
-                static bool s_dumped = false;
-                if (!s_dumped) {
-                    DumpCameraOffsets();
-                    s_dumped = true;
-                }
             }
         }
 
@@ -82,25 +77,10 @@ void HackLoop() {
                         
                         uintptr_t pKlass = 0;
                         if (ReadMemory<uintptr_t>(player, pKlass) && pKlass > 0x100000000ULL && pKlass < 0x7FFFFFFFFFFFULL) {
-                            uintptr_t pklass_10 = 0, pKlassName = 0;
-                            if (SafeAdd(pKlass, 0x10, pklass_10) && ReadMemory<uintptr_t>(pklass_10, pKlassName) && IsAddressValid(pKlassName, VM_PROT_READ)) {
-                                bool valid_name = false;
-                                for (size_t k = 0; k < 128; k++) {
-                                    uintptr_t addr_k = 0;
-                                    if (!SafeAdd(pKlassName, k, addr_k)) { valid_name = false; break; }
-                                    char c = 0;
-                                    if (!ReadMemory<char>(addr_k, c)) { valid_name = false; break; }
-                                    if (c == 0) { valid_name = (k > 0); break; }
-                                    if (c < 32 || c > 126) { valid_name = false; break; }
-                                }
-                                
-                                if (valid_name) {
-                                    tempPlayers.push_back(player);
-                                    uintptr_t camTrans_field = 0, camTrans = 0;
-                                    if (SafeAdd(player, Offsets::Player_MainCameraTransform, camTrans_field) && ReadMemory<uintptr_t>(camTrans_field, camTrans) && camTrans != 0) {
-                                        tempLocal = player;
-                                    }
-                                }
+                            tempPlayers.push_back(player);
+                            uintptr_t camTrans_field = 0, camTrans = 0;
+                            if (SafeAdd(player, Offsets::Player_MainCameraTransform, camTrans_field) && ReadMemory<uintptr_t>(camTrans_field, camTrans) && camTrans != 0) {
+                                tempLocal = player;
                             }
                         }
                     }
