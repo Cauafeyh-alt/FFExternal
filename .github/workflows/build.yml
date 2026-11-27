@@ -11,7 +11,6 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          # Adicionado libplist, libssl e libxml2 para compilar o ldid
           sudo apt-get install -y git make clang xz-utils zip unzip libplist-dev libssl-dev libxml2-dev
           
           # Compila o ldid (não tem no apt do Ubuntu)
@@ -25,6 +24,16 @@ jobs:
           export THEOS=$HOME/theos
           git clone --recursive https://github.com/theos/theos.git $THEOS
           
+          # Baixa a Toolchain do Linux (Sbingner) e coloca no lugar certo
+          mkdir -p $THEOS/toolchain/linux/
+          cd $THEOS/toolchain/linux/
+          curl -L -o toolchain.tar.xz https://github.com/sbingner/xtoolchain/releases/download/1.0/linux-ios-toolchain.tar.xz
+          tar -xf toolchain.tar.xz
+          mv linux-ios-toolchain iphone
+          rm toolchain.tar.xz
+          cd $GITHUB_WORKSPACE
+
+          # Baixa os SDKs
           mkdir -p $THEOS/sdks
           curl -L -o $THEOS/sdks/master.zip https://github.com/theos/sdks/archive/master.zip
           unzip -q $THEOS/sdks/master.zip -d $THEOS/sdks/
