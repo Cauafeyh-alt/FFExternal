@@ -38,7 +38,7 @@ inline bool RangeInBounds(uintptr_t addr, uintptr_t len, uintptr_t base, uintptr
     return addr >= base && addr_end <= base_end;
 }
 
-inline const char* KrName(kern_return_t kr) {
+static const char* KrName(kern_return_t kr) {
     switch (kr) {
         case KERN_SUCCESS: return "SUCCESS";
         case KERN_INVALID_ADDRESS: return "INVALID_ADDRESS";
