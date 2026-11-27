@@ -57,13 +57,12 @@ bool WalkRegion(mach_port_t tp, uintptr_t& address, RegionInfo& out) {
     mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
     mach_port_t object_name = MACH_PORT_NULL;
 
-    // vm_region_64 substitui a mach_vm_region bloqueada pelo SDK
     kern_return_t kr = vm_region_64(tp, &addr, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &count, &object_name);
     if (object_name != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object_name);
 
     if (kr != KERN_SUCCESS) {
-        // Se bater num buraco, avança uma página (16KB no iOS) e tenta de novo
-        address += 0x4000; 
+        // Pulo de 1MB pra passar rápido pelos buracos de memória
+        address += 0x100000; 
         if (address == 0) address = 1;
         return false;
     }
@@ -121,7 +120,8 @@ uintptr_t FindUnityBase() {
     if (tp == MACH_PORT_NULL) return 0;
 
     uintptr_t address = 0x100000000ULL;
-    while (address < 0x700000000000ULL) {
+    // Limite cravado em 16GB (0x400000000). O jogo não passa disso.
+    while (address < 0x400000000ULL) {
         RegionInfo ri;
         if (!WalkRegion(tp, address, ri)) continue;
         
@@ -237,7 +237,7 @@ uintptr_t FindUnityBase() {
 
 void CollectRegions(mach_port_t tp, std::vector<std::pair<uintptr_t, uintptr_t>>& regions) {
     uintptr_t address = 0x100000000ULL;
-    while (address < 0x700000000000ULL) {
+    while (address < 0x400000000ULL) {
         RegionInfo ri;
         if (!WalkRegion(tp, address, ri)) continue;
 
@@ -276,7 +276,6 @@ uintptr_t FindStaticMatchGame() {
         if (SafeAdd(cache.static_fields, 0x8, mg_field) && ReadMemory<uintptr_t>(mg_field, matchGame) && matchGame != 0) {
             uintptr_t objKlass = 0;
             if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == cache.class_ptr) {
-                Log("[+] MatchGame encontrado via cache!");
                 return matchGame;
             }
         }
