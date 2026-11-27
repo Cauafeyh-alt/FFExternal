@@ -1,5 +1,6 @@
 #include "hack.hpp"
 #include <mach/mach.h>
+#include <mach/mach_vm.h>
 #include <mach/vm_map.h>
 #include <mach-o/loader.h>
 #include <sys/sysctl.h>
@@ -20,14 +21,8 @@ void Log(const std::string& msg) { if(strlen(g_LogPath)) { FILE* f = fopen(g_Log
 static_assert(sizeof(vm_size_t) == sizeof(uintptr_t), "ARM64 only: vm_size_t must match uintptr_t");
 static_assert(sizeof(vm_address_t) == sizeof(uintptr_t), "ARM64 only: vm_address_t must match uintptr_t");
 
-inline bool ToVmAddress(uintptr_t v, vm_address_t& out) {
-    out = (vm_address_t)v;
-    return (uintptr_t)out == v;
-}
-inline bool ToVmSize(uintptr_t v, vm_size_t& out) {
-    out = (vm_size_t)v;
-    return (uintptr_t)out == v;
-}
+inline bool ToVmAddress(uintptr_t v, vm_address_t& out) { out = (vm_address_t)v; return (uintptr_t)out == v; }
+inline bool ToVmSize(uintptr_t v, vm_size_t& out) { out = (vm_size_t)v; return (uintptr_t)out == v; }
 inline uintptr_t FromVmSize(vm_size_t v) { return (uintptr_t)v; }
 inline uintptr_t FromVmAddress(vm_address_t v) { return (uintptr_t)v; }
 
@@ -50,70 +45,35 @@ static const char* KrName(kern_return_t kr) {
     }
 }
 
-struct RegionState {
-    uintptr_t base;
-    uintptr_t size;
-    natural_t depth;
-    bool operator==(const RegionState& o) const {
-        return base == o.base && size == o.size && depth == o.depth;
-    }
-};
-
-struct RegionStateHash {
-    std::size_t operator()(const RegionState& s) const {
-        return std::hash<uintptr_t>()(s.base) ^ 
-               (std::hash<uintptr_t>()(s.size) << 1) ^ 
-               (std::hash<natural_t>()(s.depth) << 2);
-    }
-};
-
-struct WalkGuard {
-    std::unordered_set<RegionState, RegionStateHash> visited;
-    static constexpr size_t MAX_VISITED = 65536; // AUMENTADO AQUI
-    
-    bool CheckAndAdd(uintptr_t base, uintptr_t size, natural_t depth) {
-        if (visited.size() >= MAX_VISITED) return false;
-        RegionState state{base, size, depth};
-        auto res = visited.insert(state);
-        if (!res.second) return false; // Silencioso pra não inundar o log
-        return true;
-    }
-};
-
 struct RegionInfo {
     uintptr_t base;
     uintptr_t size;
     vm_prot_t protection;
-    bool is_submap;
-    natural_t depth;
 };
 
-bool WalkRegion(mach_port_t tp, uintptr_t& address, natural_t& depth, RegionInfo& out, WalkGuard& guard) {
-    vm_address_t addr = (vm_address_t)address;
-    vm_size_t sz = 0;
-    struct vm_region_submap_info_64 info;
-    mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
-    
-    kern_return_t kr = vm_region_recurse_64(tp, &addr, &sz, &depth, (vm_region_recurse_info_t)&info, &count);
+bool WalkRegion(mach_port_t tp, uintptr_t& address, RegionInfo& out) {
+    mach_vm_address_t addr = (mach_vm_address_t)address;
+    mach_vm_size_t sz = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object_name = MACH_PORT_NULL;
+
+    kern_return_t kr = mach_vm_region(tp, &addr, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &count, &object_name);
+    if (object_name != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object_name);
+
     if (kr != KERN_SUCCESS) {
         if (kr != KERN_INVALID_ADDRESS) {
-            Log(std::string("[-] vm_region_recurse_64 kr=") + KrName(kr) + " at=0x" + std::to_string(address));
+            Log(std::string("[-] mach_vm_region kr=") + KrName(kr) + " at=0x" + std::to_string(address));
         }
+        address += 0x100000; // Pula buracos de memória não mapeada (1MB)
+        if (address == 0) address = 1;
         return false;
     }
 
-    uintptr_t curr_base = FromVmAddress(addr);
-    uintptr_t curr_size = FromVmSize(sz);
-
-    address = curr_base;
-
-    if (!guard.CheckAndAdd(curr_base, curr_size, depth)) return false;
-
-    out.base = curr_base;
-    out.size = curr_size;
+    out.base = (uintptr_t)addr;
+    out.size = (uintptr_t)sz;
     out.protection = info.protection;
-    out.is_submap = info.is_submap;
-    out.depth = depth;
+    address = out.base;
     return true;
 }
 
@@ -152,11 +112,8 @@ bool IsAddressValid(uintptr_t addr, vm_prot_t required_prot) {
     if (tp == MACH_PORT_NULL || addr == 0) return false;
     
     uintptr_t probe_addr = addr;
-    natural_t depth = 0;
     RegionInfo ri;
-    WalkGuard guard;
-    if (!WalkRegion(tp, probe_addr, depth, ri, guard)) return false;
-    if (ri.is_submap) return false;
+    if (!WalkRegion(tp, probe_addr, ri)) return false;
     if (!RangeInBounds(addr, 1, ri.base, ri.size)) return false;
     return (ri.protection & required_prot) == required_prot;
 }
@@ -165,24 +122,15 @@ uintptr_t FindUnityBase() {
     mach_port_t tp = GetTaskPort();
     if (tp == MACH_PORT_NULL) return 0;
 
-    uintptr_t address = 0;
-    natural_t depth = 0;
-    WalkGuard guard;
-    
-    while (true) {
+    uintptr_t address = 0x100000000ULL;
+    while (address < 0x700000000000ULL) {
         RegionInfo ri;
-        if (!WalkRegion(tp, address, depth, ri, guard)) break;
+        if (!WalkRegion(tp, address, ri)) continue;
         
-        if (ri.is_submap) {
-            depth++;
-            address = ri.base;
-            continue;
-        }
-
         if ((ri.protection & VM_PROT_READ) == VM_PROT_READ) {
             struct mach_header_64 header;
             vm_address_t vm_addr;
-            if (!ToVmAddress(address, vm_addr)) break;
+            if (!ToVmAddress(ri.base, vm_addr)) break;
 
             vm_size_t readSize = sizeof(header);
             kern_return_t kr = vm_read_overwrite(tp, vm_addr, sizeof(header), (vm_address_t)&header, &readSize);
@@ -198,7 +146,7 @@ uintptr_t FindUnityBase() {
                     if (!cmds) goto next_region;
 
                     uintptr_t addr_cmds;
-                    if (!SafeAdd(address, sizeof(header), addr_cmds)) { free(cmds); break; }
+                    if (!SafeAdd(ri.base, sizeof(header), addr_cmds)) { free(cmds); break; }
                     
                     vm_address_t vm_cmds;
                     if (!ToVmAddress(addr_cmds, vm_cmds)) { free(cmds); break; }
@@ -262,7 +210,7 @@ uintptr_t FindUnityBase() {
                             && parsed_cmds == header.ncmds 
                             && accumulated == (uintptr_t)header.sizeofcmds) {
                             uintptr_t base;
-                            if (SafeSub(address, (uintptr_t)text_vmaddr, base)) {
+                            if (SafeSub(ri.base, (uintptr_t)text_vmaddr, base)) {
                                 if (IsAddressValid(base, VM_PROT_EXECUTE)) {
                                     char hex_buf[64];
                                     snprintf(hex_buf, sizeof(hex_buf), "0x%" PRIxPTR, base);
@@ -282,38 +230,26 @@ uintptr_t FindUnityBase() {
     next_region:
         {
             uintptr_t next_addr;
-            if (!SafeAdd(address, ri.size, next_addr)) break;
+            if (!SafeAdd(ri.base, ri.size, next_addr)) break;
             address = next_addr;
-            depth = 0;
         }
     }
     return 0;
 }
 
-void CollectRegionsRecursive(mach_port_t tp, uintptr_t start, uintptr_t size, natural_t depth, std::vector<std::pair<uintptr_t, uintptr_t>>& regions, WalkGuard& guard) {
-    if (depth > 32) return;
-    uintptr_t end;
-    if (!SafeAdd(start, size, end)) return;
-    uintptr_t address = start;
-    natural_t curr_depth = depth;
-
-    while (address < end) {
+void CollectRegions(mach_port_t tp, std::vector<std::pair<uintptr_t, uintptr_t>>& regions) {
+    uintptr_t address = 0x100000000ULL;
+    while (address < 0x700000000000ULL) {
         RegionInfo ri;
-        if (!WalkRegion(tp, address, curr_depth, ri, guard)) break;
-        
-        uintptr_t next;
-        if (!SafeAdd(ri.base, ri.size, next)) break;
+        if (!WalkRegion(tp, address, ri)) continue;
 
-        if (next <= address) break;
-
-        if (ri.is_submap) {
-            natural_t nd = (curr_depth < 32) ? (curr_depth + 1) : 32;
-            CollectRegionsRecursive(tp, ri.base, ri.size, nd, regions, guard);
-        } else if ((ri.protection & VM_PROT_READ) == VM_PROT_READ) {
+        if ((ri.protection & VM_PROT_READ) == VM_PROT_READ) {
             regions.push_back({ri.base, ri.size});
         }
+
+        uintptr_t next;
+        if (!SafeAdd(ri.base, ri.size, next)) break;
         address = next;
-        curr_depth = depth;
     }
 }
 
@@ -342,6 +278,7 @@ uintptr_t FindStaticMatchGame() {
         if (SafeAdd(cache.static_fields, 0x8, mg_field) && ReadMemory<uintptr_t>(mg_field, matchGame) && matchGame != 0) {
             uintptr_t objKlass = 0;
             if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == cache.class_ptr) {
+                Log("[+] MatchGame encontrado via cache!");
                 return matchGame;
             }
         }
@@ -351,8 +288,7 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t string_addr = 0;
     {
         std::vector<std::pair<uintptr_t, uintptr_t>> regions;
-        WalkGuard guard;
-        CollectRegionsRecursive(tp, 0x100000000ULL, 0x700000000000ULL, 0, regions, guard);
+        CollectRegions(tp, regions);
 
         const uintptr_t CHUNK = 4ULL * 1024 * 1024;
         const uintptr_t OVERLAP = 15;
@@ -407,8 +343,7 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t static_fields = 0;
     {
         std::vector<std::pair<uintptr_t, uintptr_t>> regions;
-        WalkGuard guard;
-        CollectRegionsRecursive(tp, 0x100000000ULL, 0x700000000000ULL, 0, regions, guard);
+        CollectRegions(tp, regions);
 
         const uintptr_t CHUNK = 4ULL * 1024 * 1024;
         const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00};
@@ -492,6 +427,11 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t objKlass = 0;
     if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == class_ptr) {
         SetFacadeCache(static_fields, class_ptr);
+        
+        char hex_buf[64];
+        snprintf(hex_buf, sizeof(hex_buf), "0x%" PRIxPTR, matchGame);
+        Log("[+] MatchGame Encontrado: " + std::string(hex_buf));
+        
         return matchGame;
     }
     return 0;
