@@ -3,8 +3,7 @@ on: [push, workflow_dispatch]
 
 jobs:
   build:
-    # A MÁGICA AQUI: Ubuntu é grátis no GitHub Actions
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest # Linux roda infinito de graça em repo público
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -12,17 +11,17 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make clang ldid xz-utils libtinfo5 zip
+          sudo apt-get install -y git make clang ldid xz-utils zip unzip
           
-          # Instala o Theos e os SDKs no Linux
+          # Baixa e configura o Theos no Linux
           export THEOS=$HOME/theos
           git clone --recursive https://github.com/theos/theos.git $THEOS
           
           mkdir -p $THEOS/sdks
-          curl -LO https://github.com/theos/sdks/archive/master.zip
-          unzip master.zip -d $THEOS/sdks
+          curl -L -o $THEOS/sdks/master.zip https://github.com/theos/sdks/archive/master.zip
+          unzip -q $THEOS/sdks/master.zip -d $THEOS/sdks/
           mv $THEOS/sdks/sdks-master/* $THEOS/sdks/
-          rm -rf $THEOS/sdks/sdks-master master.zip
+          rm -rf $THEOS/sdks/sdks-master $THEOS/sdks/master.zip
 
       - name: Build and Stage App
         run: |
@@ -38,10 +37,8 @@ jobs:
           cp -r .theos/_/Applications/FFExternal.app Payload/
           cp Info.plist Payload/FFExternal.app/Info.plist
           
-          # Injeta os entitlements com ldid (funciona no linux)
           ldid -SEntitlements.plist Payload/FFExternal.app/FFExternal
           
-          # Checagem simples (sem codesign, que é exclusivo do mac)
           if ! ldid -e Payload/FFExternal.app/FFExternal | grep -q "task_for_pid-allow"; then
               echo "ERRO FATAL: Falta a permissao task_for_pid-allow!"
               exit 1
