@@ -28,7 +28,7 @@ extern "C" void set_log_path(const char* path);
     float cx = rect.size.width / 2;
     float cy = rect.size.height / 2;
     
-    Config cfg = GetConfig(); // Lê trancado
+    Config cfg = GetConfig();
 
     if (cfg.drawFOV) {
         CGContextSetRGBStrokeColor(ctx, 1.0, 1.0, 1.0, 0.5);
@@ -105,7 +105,7 @@ extern "C" void set_log_path(const char* path);
     [scroll addSubview:aimTitle];
     y += 35;
 
-    Config cfg = GetConfig(); // Snapshot inicial
+    Config cfg = GetConfig();
 
     UISwitch *aimToggle = [[UISwitch alloc] initWithFrame:CGRectMake(20, y, 50, 30)];
     aimToggle.on = cfg.aimbotEnabled;
@@ -121,7 +121,7 @@ extern "C" void set_log_path(const char* path);
     [headToggle addTarget:self action:@selector(toggleHead:) forControlEvents:UIControlEventValueChanged];
     [scroll addSubview:headToggle];
     UILabel *l2 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l2.text = @"Cabeça"; l2.textColor = [UIColor whiteColor];
+    l2.text = @"Cabeca"; l2.textColor = [UIColor whiteColor];
     [scroll addSubview:l2];
     y += spacing;
 
@@ -130,7 +130,7 @@ extern "C" void set_log_path(const char* path);
     [neckToggle addTarget:self action:@selector(toggleNeck:) forControlEvents:UIControlEventValueChanged];
     [scroll addSubview:neckToggle];
     UILabel *l3 = [[UILabel alloc] initWithFrame:CGRectMake(100, y, 200, 30)];
-    l3.text = @"Pescoço"; l3.textColor = [UIColor whiteColor];
+    l3.text = @"Pescoco"; l3.textColor = [UIColor whiteColor];
     [scroll addSubview:l3];
     y += spacing;
 
@@ -161,7 +161,7 @@ extern "C" void set_log_path(const char* path);
     [fovCircleToggle addTarget:self action:@selector(toggleFovCircle:) forControlEvents:UIControlEventValueChanged];
     [scroll addSubview:fovCircleToggle];
     UILabel *l6 = [[UILabel alloc] initWithFrame:CGRectMake(80, y, 200, 30)];
-    l6.text = @"Mostrar Círculo FOV"; l6.textColor = [UIColor whiteColor];
+    l6.text = @"Mostrar Circulo FOV"; l6.textColor = [UIColor whiteColor];
     [scroll addSubview:l6];
     y += spacing + 15;
 
@@ -224,7 +224,11 @@ extern "C" void set_log_path(const char* path);
 }
 @end
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@interface AppDelegate : UIResponder <UIApplicationDelegate> {
+    std::thread _hackThread;
+    std::thread _aimbotThread;
+    std::thread _espThread;
+}
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) UIWindow *overlayWindow;
 @property (strong, nonatomic) CADisplayLink *displayLink;
@@ -265,11 +269,23 @@ extern "C" void set_log_path(const char* path);
     NSString *logPath = [NSString stringWithFormat:@"%@/ff_log.txt", documentsDirectory];
     set_log_path([logPath UTF8String]);
 
-    std::thread(HackLoop).detach();
-    std::thread(AimbotThread).detach();
-    std::thread(EspThread).detach();
+    _hackThread = std::thread(HackLoop);
+    _aimbotThread = std::thread(AimbotThread);
+    _espThread = std::thread(EspThread);
 
     return YES;
+}
+
+- (void)applicationWillTerminate:(UIApplication *)application {
+    g_Running.store(false, std::memory_order_release);
+    
+    // Thread coordenadora para evitar data race no join/detach
+    std::thread([this]() {
+        if (_hackThread.joinable())   _hackThread.join();
+        if (_aimbotThread.joinable()) _aimbotThread.join();
+        if (_espThread.joinable())    _espThread.join();
+        Log("[+] Threads encerradas pelo coordenador.");
+    }).detach();
 }
 
 - (void)updateOverlay:(CADisplayLink *)displayLink {
