@@ -111,6 +111,9 @@ bool WalkRegion(mach_port_t tp, uintptr_t& address, natural_t& depth, RegionInfo
     uintptr_t curr_base = FromVmAddress(addr);
     uintptr_t curr_size = FromVmSize(sz);
 
+    // FIX 1 (CHATGPT): Salva o endereço que o kernel devolveu na referência
+    address = curr_base;
+
     if (!guard.CheckAndAdd(curr_base, curr_size, depth)) return false;
 
     out.base = curr_base;
@@ -288,6 +291,7 @@ uintptr_t FindUnityBase() {
             uintptr_t next_addr;
             if (!SafeAdd(address, ri.size, next_addr)) break;
             address = next_addr;
+            depth = 0; // FIX 2 (OLLIE): Reseta o depth pro próximo bloco
         }
     }
     return 0;
@@ -319,6 +323,7 @@ void CollectRegionsRecursive(mach_port_t tp, uintptr_t start, uintptr_t size, na
             regions.push_back({ri.base, ri.size});
         }
         address = next;
+        curr_depth = depth; // FIX 2 (OLLIE): Reseta o depth
     }
 }
 
