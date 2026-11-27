@@ -60,8 +60,7 @@ bool WalkRegion(mach_port_t tp, uintptr_t& address, RegionInfo& out) {
     kern_return_t kr = vm_region_64(tp, &addr, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &count, &object_name);
     if (object_name != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object_name);
 
-    if (kr != KERN_SUCCESS) {
-        // Pulo de 1MB pra passar rápido pelos buracos de memória
+    if (kr != KERN_SUCCESS || sz == 0) {
         address += 0x100000; 
         if (address == 0) address = 1;
         return false;
@@ -120,7 +119,6 @@ uintptr_t FindUnityBase() {
     if (tp == MACH_PORT_NULL) return 0;
 
     uintptr_t address = 0x100000000ULL;
-    // Limite cravado em 16GB (0x400000000). O jogo não passa disso.
     while (address < 0x400000000ULL) {
         RegionInfo ri;
         if (!WalkRegion(tp, address, ri)) continue;
@@ -283,9 +281,14 @@ uintptr_t FindStaticMatchGame() {
     }
 
     uintptr_t string_addr = 0;
+    const char* target_name = "GameFacade";
     {
         std::vector<std::pair<uintptr_t, uintptr_t>> regions;
         CollectRegions(tp, regions);
+        
+        char log_buf[128];
+        snprintf(log_buf, sizeof(log_buf), "[SCAN] Coletou %lu regioes.", regions.size());
+        Log(log_buf);
 
         const uintptr_t CHUNK = 4ULL * 1024 * 1024;
         const uintptr_t OVERLAP = 15;
@@ -318,8 +321,11 @@ uintptr_t FindStaticMatchGame() {
                 
                 if (kr == KERN_SUCCESS && (uintptr_t)got == want && got > OVERLAP) {
                     for (vm_size_t i = 0; i < got - OVERLAP; i++) {
-                        if (memcmp(buf + i, "GameFacade", 10) == 0 && buf[i + 10] == '\0') {
+                        // Tenta "GameFacade" ou "MatchGame"
+                        if ((memcmp(buf + i, "GameFacade", 10) == 0 && buf[i + 10] == '\0') ||
+                            (memcmp(buf + i, "MatchGame", 9) == 0 && buf[i + 9] == '\0')) {
                             if (!SafeAdd(address, i, string_addr)) string_addr = 0;
+                            if (memcmp(buf + i, "MatchGame", 9) == 0) target_name = "MatchGame";
                             break;
                         }
                     }
@@ -334,7 +340,15 @@ uintptr_t FindStaticMatchGame() {
             if (string_addr) break;
         }
     }
-    if (string_addr == 0) return 0;
+    
+    if (string_addr == 0) {
+        Log("[-] Falhou: String 'GameFacade' ou 'MatchGame' nao encontrada na memoria.");
+        return 0;
+    }
+    
+    char s_log[128];
+    snprintf(s_log, sizeof(s_log), "[SCAN] String '%s' achada em 0x%" PRIxPTR, target_name, string_addr);
+    Log(s_log);
 
     uintptr_t class_ptr = 0;
     uintptr_t static_fields = 0;
@@ -343,8 +357,9 @@ uintptr_t FindStaticMatchGame() {
         CollectRegions(tp, regions);
 
         const uintptr_t CHUNK = 4ULL * 1024 * 1024;
-        const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00};
-        const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98};
+        // Offsets expandidos para diferentes versoes do Unity/Il2Cpp
+        const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00, 0x18, 0x20};
+        const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98, 0xE0, 0xE8, 0x88, 0x80, 0xD0, 0x70, 0x78};
 
         for (auto& reg : regions) {
             uintptr_t reg_end;
@@ -415,11 +430,18 @@ uintptr_t FindStaticMatchGame() {
             if (class_ptr) break;
         }
     }
-    if (class_ptr == 0) return 0;
+    
+    if (class_ptr == 0) {
+        Log("[-] Falhou: Nenhum Il2CppClass apontando pra string foi encontrado (offsets errados?).");
+        return 0;
+    }
 
     uintptr_t mg_field, matchGame;
     if (!SafeAdd(static_fields, 0x8, mg_field)) return 0;
-    if (!ReadMemory<uintptr_t>(mg_field, matchGame) || matchGame == 0) return 0;
+    if (!ReadMemory<uintptr_t>(mg_field, matchGame) || matchGame == 0) {
+        Log("[-] Falhou: static_fields + 0x8 deu null.");
+        return 0;
+    }
 
     uintptr_t objKlass = 0;
     if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == class_ptr) {
@@ -430,6 +452,8 @@ uintptr_t FindStaticMatchGame() {
         Log("[+] MatchGame Encontrado: " + std::string(hex_buf));
         
         return matchGame;
+    } else {
+        Log("[-] Falhou: O objeto achado nao e um MatchGame (klass mismatch).");
     }
     return 0;
 }
