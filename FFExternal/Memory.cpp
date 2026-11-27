@@ -69,19 +69,13 @@ struct RegionStateHash {
 
 struct WalkGuard {
     std::unordered_set<RegionState, RegionStateHash> visited;
-    static constexpr size_t MAX_VISITED = 4096; 
+    static constexpr size_t MAX_VISITED = 65536; // AUMENTADO AQUI
     
     bool CheckAndAdd(uintptr_t base, uintptr_t size, natural_t depth) {
-        if (visited.size() >= MAX_VISITED) {
-            Log("[-] Limite de nos visitados atingido. Abortando scan.");
-            return false;
-        }
+        if (visited.size() >= MAX_VISITED) return false;
         RegionState state{base, size, depth};
         auto res = visited.insert(state);
-        if (!res.second) {
-            Log("[-] Estado de regiao repetido (loop). Abortando scan.");
-            return false;
-        }
+        if (!res.second) return false; // Silencioso pra não inundar o log
         return true;
     }
 };
@@ -111,7 +105,6 @@ bool WalkRegion(mach_port_t tp, uintptr_t& address, natural_t& depth, RegionInfo
     uintptr_t curr_base = FromVmAddress(addr);
     uintptr_t curr_size = FromVmSize(sz);
 
-    // FIX 1 (CHATGPT): Salva o endereço que o kernel devolveu na referência
     address = curr_base;
 
     if (!guard.CheckAndAdd(curr_base, curr_size, depth)) return false;
@@ -291,7 +284,7 @@ uintptr_t FindUnityBase() {
             uintptr_t next_addr;
             if (!SafeAdd(address, ri.size, next_addr)) break;
             address = next_addr;
-            depth = 0; // FIX 2 (OLLIE): Reseta o depth pro próximo bloco
+            depth = 0;
         }
     }
     return 0;
@@ -311,10 +304,7 @@ void CollectRegionsRecursive(mach_port_t tp, uintptr_t start, uintptr_t size, na
         uintptr_t next;
         if (!SafeAdd(ri.base, ri.size, next)) break;
 
-        if (next <= address) {
-            Log("[-] Loop detectado: endereco nao avancou.");
-            break;
-        }
+        if (next <= address) break;
 
         if (ri.is_submap) {
             natural_t nd = (curr_depth < 32) ? (curr_depth + 1) : 32;
@@ -323,7 +313,7 @@ void CollectRegionsRecursive(mach_port_t tp, uintptr_t start, uintptr_t size, na
             regions.push_back({ri.base, ri.size});
         }
         address = next;
-        curr_depth = depth; // FIX 2 (OLLIE): Reseta o depth
+        curr_depth = depth;
     }
 }
 
