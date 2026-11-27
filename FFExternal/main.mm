@@ -279,7 +279,8 @@ extern "C" void set_log_path(const char* path);
 - (void)applicationWillTerminate:(UIApplication *)application {
     g_Running.store(false, std::memory_order_release);
     
-    // Pega os ponteiros para as threads pra não ter que capturar o self (evita erro no clang do linux)
+    // Correção da captura: O Clang do Linux não aceita [this] no ObjC++.
+    // Pegamos os ponteiros diretos pras variáveis membro.
     std::thread* h = &_hackThread;
     std::thread* a = &_aimbotThread;
     std::thread* e = &_espThread;
