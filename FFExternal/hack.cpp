@@ -3,6 +3,8 @@
 #include <chrono>
 #include <string>
 
+static bool s_teamDumpLogged = false;
+
 void HackLoop() {
     Log("=== HackLoop Iniciado ===");
     { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: Iniciando Threads..."; }
@@ -38,49 +40,67 @@ void HackLoop() {
             SetStaticMatchGame(matchGame);
         }
 
-        uintptr_t camMgr = ReadMemory<uintptr_t>(matchGame + Offsets::MatchGame_CameraModeMgr);
-        if (camMgr) {
-            SetGameCamera(ReadMemory<uintptr_t>(camMgr + Offsets::CameraControllerMgr_GameCamera));
+        uintptr_t camMgr_field = 0;
+        uintptr_t camMgr = 0;
+        if (SafeAdd(matchGame, Offsets::MatchGame_CameraModeMgr, camMgr_field) && ReadMemory<uintptr_t>(camMgr_field, camMgr) && camMgr) {
+            uintptr_t cam_field = 0;
+            uintptr_t cam = 0;
+            if (SafeAdd(camMgr, Offsets::CameraControllerMgr_GameCamera, cam_field) && ReadMemory<uintptr_t>(cam_field, cam)) {
+                SetGameCamera(cam);
+                static bool s_dumped = false;
+                if (!s_dumped) {
+                    DumpCameraOffsets();
+                    s_dumped = true;
+                }
+            }
         }
 
         std::vector<uintptr_t> tempPlayers;
         uintptr_t tempLocal = 0;
 
-        uintptr_t matchObj = ReadMemory<uintptr_t>(matchGame + Offsets::MatchGame_M_Match);
+        uintptr_t matchObj_field = 0;
+        uintptr_t matchObj = 0;
         
-        if (matchObj) {
-            uintptr_t playerList = ReadMemory<uintptr_t>(matchObj + Offsets::JM_PlayerList);
-            if (playerList) {
-                uintptr_t playerArray = ReadMemory<uintptr_t>(playerList + 0x10); 
-                int playerCount = ReadMemory<int>(playerList + 0x18);
+        if (SafeAdd(matchGame, Offsets::MatchGame_M_Match, matchObj_field) && ReadMemory<uintptr_t>(matchObj_field, matchObj) && matchObj) {
+            uintptr_t playerList_field = 0;
+            uintptr_t playerList = 0;
+            if (SafeAdd(matchObj, Offsets::JM_PlayerList, playerList_field) && ReadMemory<uintptr_t>(playerList_field, playerList) && playerList) {
+                uintptr_t array_field = 0, count_field = 0;
+                uintptr_t playerArray = 0;
+                int playerCount = 0;
                 
-                if (playerArray && playerCount > 0 && playerCount < 100) {
+                if (SafeAdd(playerList, 0x10, array_field) && ReadMemory<uintptr_t>(array_field, playerArray) &&
+                    SafeAdd(playerList, 0x18, count_field) && ReadMemory<int>(count_field, playerCount) &&
+                    playerArray && playerCount > 0 && playerCount < 100) {
+                    
                     for (int i = 0; i < playerCount; i++) {
-                        uintptr_t player = ReadMemory<uintptr_t>(playerArray + 0x20 + (i * 0x8));
-                        if (player) {
-                            tempPlayers.push_back(player);
-                            uintptr_t camTrans = ReadMemory<uintptr_t>(player + Offsets::Player_MainCameraTransform);
-                            if (camTrans != 0) tempLocal = player; 
-                        }
-                    }
-                }
-            }
-        } else {
-            uintptr_t dictPtr = ReadMemory<uintptr_t>(matchGame + 0xC0);
-            if (dictPtr) {
-                uintptr_t entriesPtr = ReadMemory<uintptr_t>(dictPtr + 0x18); 
-                int count = ReadMemory<int>(dictPtr + 0x20); 
-                
-                if (entriesPtr && count > 0 && count < 300) {
-                    for (int i = 0; i < count; i++) {
-                        uintptr_t entry = entriesPtr + 0x20 + (i * 0x18); 
-                        uintptr_t entity = ReadMemory<uintptr_t>(entry + 0x10); 
-                        if (entity) {
-                            int hp = ReadMemory<int>(entity + Offsets::Player_HP_Candidate);
-                            if (hp > 0 && hp <= 1000) {
-                                tempPlayers.push_back(entity);
-                                uintptr_t camTrans = ReadMemory<uintptr_t>(entity + Offsets::Player_MainCameraTransform);
-                                if (camTrans != 0) tempLocal = entity;
+                        uintptr_t offset = 0, entry = 0, player = 0;
+                        if (!SafeMul((uintptr_t)i, 0x8, offset)) continue;
+                        if (!SafeAdd(playerArray, 0x20, entry)) continue;
+                        if (!SafeAdd(entry, offset, entry)) continue;
+                        if (!ReadMemory<uintptr_t>(entry, player) || !player) continue;
+                        
+                        uintptr_t pKlass = 0;
+                        if (ReadMemory<uintptr_t>(player, pKlass) && pKlass > 0x100000000ULL && pKlass < 0x7FFFFFFFFFFFULL) {
+                            uintptr_t pklass_10 = 0, pKlassName = 0;
+                            if (SafeAdd(pKlass, 0x10, pklass_10) && ReadMemory<uintptr_t>(pklass_10, pKlassName) && IsAddressValid(pKlassName, VM_PROT_READ)) {
+                                bool valid_name = false;
+                                for (size_t k = 0; k < 128; k++) {
+                                    uintptr_t addr_k = 0;
+                                    if (!SafeAdd(pKlassName, k, addr_k)) { valid_name = false; break; }
+                                    char c = 0;
+                                    if (!ReadMemory<char>(addr_k, c)) { valid_name = false; break; }
+                                    if (c == 0) { valid_name = (k > 0); break; }
+                                    if (c < 32 || c > 126) { valid_name = false; break; }
+                                }
+                                
+                                if (valid_name) {
+                                    tempPlayers.push_back(player);
+                                    uintptr_t camTrans_field = 0, camTrans = 0;
+                                    if (SafeAdd(player, Offsets::Player_MainCameraTransform, camTrans_field) && ReadMemory<uintptr_t>(camTrans_field, camTrans) && camTrans != 0) {
+                                        tempLocal = player;
+                                    }
+                                }
                             }
                         }
                     }
@@ -88,7 +108,18 @@ void HackLoop() {
             }
         }
 
-        // Update global state safely using accessors and lock
+        if (!s_teamDumpLogged && tempLocal != 0) {
+            uintptr_t teamField = 0;
+            if (SafeAdd(tempLocal, Offsets::Player_TeamModeID, teamField)) {
+                uint32_t team32 = 0;
+                ReadMemory<uint32_t>(teamField, team32);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "[DUMP] TeamModeID @0x%llx: 32=0x%x", (unsigned long long)teamField, (unsigned)team32);
+                Log(buf);
+            }
+            s_teamDumpLogged = true;
+        }
+
         {
             std::lock_guard<std::mutex> lk(g_PlayerMutex);
             g_Players = std::move(tempPlayers);
