@@ -1,6 +1,5 @@
 #include "hack.hpp"
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <mach/vm_map.h>
 #include <mach-o/loader.h>
 #include <sys/sysctl.h>
@@ -52,20 +51,19 @@ struct RegionInfo {
 };
 
 bool WalkRegion(mach_port_t tp, uintptr_t& address, RegionInfo& out) {
-    mach_vm_address_t addr = (mach_vm_address_t)address;
-    mach_vm_size_t sz = 0;
+    vm_address_t addr = (vm_address_t)address;
+    vm_size_t sz = 0;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
     mach_port_t object_name = MACH_PORT_NULL;
 
-    kern_return_t kr = mach_vm_region(tp, &addr, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &count, &object_name);
+    // vm_region_64 substitui a mach_vm_region bloqueada pelo SDK
+    kern_return_t kr = vm_region_64(tp, &addr, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &count, &object_name);
     if (object_name != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object_name);
 
     if (kr != KERN_SUCCESS) {
-        if (kr != KERN_INVALID_ADDRESS) {
-            Log(std::string("[-] mach_vm_region kr=") + KrName(kr) + " at=0x" + std::to_string(address));
-        }
-        address += 0x100000; // Pula buracos de memória não mapeada (1MB)
+        // Se bater num buraco, avança uma página (16KB no iOS) e tenta de novo
+        address += 0x4000; 
         if (address == 0) address = 1;
         return false;
     }
