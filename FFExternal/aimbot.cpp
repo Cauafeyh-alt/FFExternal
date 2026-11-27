@@ -11,17 +11,14 @@ static Quaternion EulerToQuaternion(float pitch, float yaw, float roll) {
              cx*cy*sz - sx*sy*cz, cx*cy*cz + sx*sy*sz };
 }
 
-// Normalize both branches. Guard zero-length and near-parallel inputs.
 static Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
     float dot = q1.x*q2.x + q1.y*q2.y + q1.z*q2.z + q1.w*q2.w;
     if (dot < 0.0f) { q2.x = -q2.x; q2.y = -q2.y; q2.z = -q2.z; q2.w = -q2.w; dot = -dot; }
 
     Quaternion r;
     if (dot > 0.9995f) {
-        r = { q1.x + t*(q2.x - q1.x),
-              q1.y + t*(q2.y - q1.y),
-              q1.z + t*(q2.z - q1.z),
-              q1.w + t*(q2.w - q1.w) };
+        r = { q1.x + t*(q2.x - q1.x), q1.y + t*(q2.y - q1.y),
+              q1.z + t*(q2.z - q1.z), q1.w + t*(q2.w - q1.w) };
     } else {
         float theta_0 = acosf(dot);
         float theta   = theta_0 * t;
@@ -32,10 +29,8 @@ static Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
         } else {
             float s0 = cosf(theta) - dot * sin_t / sin_t0;
             float s1 = sin_t / sin_t0;
-            r = { q1.x*s0 + q2.x*s1,
-                  q1.y*s0 + q2.y*s1,
-                  q1.z*s0 + q2.z*s1,
-                  q1.w*s0 + q2.w*s1 };
+            r = { q1.x*s0 + q2.x*s1, q1.y*s0 + q2.y*s1,
+                  q1.z*s0 + q2.z*s1, q1.w*s0 + q2.w*s1 };
         }
     }
 
@@ -47,7 +42,7 @@ static Quaternion Slerp(Quaternion q1, Quaternion q2, float t) {
 
 void AimbotThread() {
     while (g_Running.load(std::memory_order_acquire)) {
-        Config cfg = GetConfig();                        // one snapshot per tick
+        Config cfg = GetConfig(); 
         if (!cfg.aimbotEnabled) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
@@ -75,15 +70,24 @@ void AimbotThread() {
         float     bestDist   = cfg.aimRange;
         Vector3   bestTargetPos{};
 
-        Matrix4x4 vm = GetViewMatrix();
-        bool hasVM = (vm.m[0][0] != 0);
+        Matrix4x4 vp = GetViewProjectionMatrix();
+        bool hasVP = (vp.m[0][0] != 0);
 
         for (uintptr_t p : players) {
             if (p == localPlayer) continue;
-            if (ReadMemory<bool>(p + Offsets::Player_IsClientBot)) continue;
+            
+            uintptr_t bot_field = 0;
+            bool isBot = false;
+            if (!SafeAdd(p, Offsets::Player_IsClientBot, bot_field) || !ReadMemory<bool>(bot_field, isBot) || isBot) continue;
 
-            uintptr_t myTeam    = ReadMemory<uintptr_t>(localPlayer + Offsets::Player_TeamModeID);
-            uintptr_t enemyTeam = ReadMemory<uintptr_t>(p + Offsets::Player_TeamModeID);
+            uintptr_t localTeam_field = 0;
+            uint32_t myTeam = 0;
+            if (!SafeAdd(localPlayer, Offsets::Player_TeamModeID, localTeam_field) || !ReadMemory<uint32_t>(localTeam_field, myTeam)) continue;
+
+            uintptr_t pTeam_field = 0;
+            uint32_t enemyTeam = 0;
+            if (!SafeAdd(p, Offsets::Player_TeamModeID, pTeam_field) || !ReadMemory<uint32_t>(pTeam_field, enemyTeam)) continue;
+            
             if (myTeam != 0 && myTeam == enemyTeam) continue;
 
             Vector3 enemyPos = GetEntityPosition(p);
@@ -93,9 +97,9 @@ void AimbotThread() {
             Vector3 headPos = enemyPos;
             headPos.y += alt;
 
-            if (hasVM) {
+            if (hasVP) {
                 Vector2 sp;
-                if (!WorldToScreen(headPos, sp, vm, g_ScreenWidth, g_ScreenHeight)) continue;
+                if (!WorldToScreen(headPos, sp, vp, g_ScreenWidth, g_ScreenHeight)) continue;
                 float dx = sp.x - (g_ScreenWidth  / 2.0f);
                 float dy = sp.y - (g_ScreenHeight / 2.0f);
                 if (std::sqrt(dx*dx + dy*dy) > cfg.aimFOV) continue;
@@ -112,15 +116,20 @@ void AimbotThread() {
             float yaw   = std::atan2(dir.x, dir.z)   * (180.0f / (float)M_PI);
 
             Quaternion target  = EulerToQuaternion(-pitch, yaw, 0.0f);
-            Quaternion current = ReadMemory<Quaternion>(localPlayer + Offsets::Player_CurrentAimRotation);
+            uintptr_t aim_field = 0;
+            Quaternion current = {0,0,0,1};
+            if (SafeAdd(localPlayer, Offsets::Player_CurrentAimRotation, aim_field)) {
+                ReadMemory<Quaternion>(aim_field, current);
+            }
 
-            // Guard current against the all-zeros default from a failed read.
             if (current.x == 0 && current.y == 0 && current.z == 0 && current.w == 0) {
                 current = {0.0f, 0.0f, 0.0f, 1.0f};
             }
 
             Quaternion next = Slerp(current, target, 0.15f);
-            WriteMemory<Quaternion>(localPlayer + Offsets::Player_CurrentAimRotation, next);
+            if (SafeAdd(localPlayer, Offsets::Player_CurrentAimRotation, aim_field)) {
+                WriteMemory<Quaternion>(aim_field, next);
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
