@@ -15,24 +15,27 @@ jobs:
 
       - name: Setup Theos & SDKs
         run: |
-          # 1. Baixa o Theos
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          
-          # 2. Baixa os SDKs (corrigindo o bug da pasta que não existia)
-          mkdir -p $HOME/theos/sdks
+          THEOS_DIR="$GITHUB_WORKSPACE/theos"
+          echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
+
+          # 1. Theos dentro do workspace
+          git clone --recursive https://github.com/theos/theos.git $THEOS_DIR
+
+          # 2. SDKs
+          mkdir -p $THEOS_DIR/sdks
           curl -L -o /tmp/sdks.zip https://github.com/theos/sdks/archive/master.zip
           unzip -q /tmp/sdks.zip -d /tmp/sdks
-          mv /tmp/sdks/sdks-master/*.sdk $HOME/theos/sdks/
-          
-          # 3. Baixa o Toolchain da Apple (inclui o linker correto)
-          curl -sL https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o /tmp/swift.tar.xz
-          tar -xf /tmp/swift.tar.xz -C $HOME/theos/toolchain/
+          mv /tmp/sdks/sdks-master/*.sdk $THEOS_DIR/sdks/
 
-          # 4. Aponta os binários para o clang do sistema (sem sobrescrever o ld)
-          mkdir -p $HOME/theos/toolchain/linux/iphone/bin
-          ln -sf /usr/bin/clang   $HOME/theos/toolchain/linux/iphone/bin/clang
-          ln -sf /usr/bin/clang++ $HOME/theos/toolchain/linux/iphone/bin/clang++
-          ln -sf /usr/bin/ar      $HOME/theos/toolchain/linux/iphone/bin/ar
+          # 3. Toolchain Apple (ld64 incluso)
+          curl -sL https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o /tmp/swift.tar.xz
+          tar -xf /tmp/swift.tar.xz -C $THEOS_DIR/toolchain/
+
+          # 4. Symlinks do clang (sem tocar no ld)
+          mkdir -p $THEOS_DIR/toolchain/linux/iphone/bin
+          ln -sf /usr/bin/clang   $THEOS_DIR/toolchain/linux/iphone/bin/clang
+          ln -sf /usr/bin/clang++ $THEOS_DIR/toolchain/linux/iphone/bin/clang++
+          ln -sf /usr/bin/ar      $THEOS_DIR/toolchain/linux/iphone/bin/ar
 
       - name: Compile ldid
         run: |
@@ -43,8 +46,6 @@ jobs:
           cd ..
 
       - name: Build and Stage App
-        env:
-          THEOS: ${{ github.workspace }}/../theos
         run: |
           cd FFExternal
           export PATH=$THEOS/bin:$PATH
