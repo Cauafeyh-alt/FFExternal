@@ -26,10 +26,9 @@ jobs:
           git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks
           mv /tmp/sdks/*.sdk $THEOS/sdks/
 
-          # 3. Toolchain L1ghtmann (via wget direto)
-          mkdir -p $THEOS/toolchain/linux/iphone
-          curl -L -o /tmp/toolchain.tar.xz https://github.com/L1ghtmann/llvm-project/releases/download/llvmorg-16.0.6/linux-ios-toolchain.tar.xz
-          tar -xf /tmp/toolchain.tar.xz -C $THEOS/toolchain/linux/
+          # 3. Toolchain L1ghtmann (URL correta: latest/download, x86_64)
+          curl -L -o /tmp/iOSToolchain.tar.xz https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz
+          tar -xJvf /tmp/iOSToolchain.tar.xz -C $THEOS/toolchain/
 
           # 4. Verifica se o clang e o header estão no lugar
           export PATH=$THEOS/toolchain/linux/iphone/bin:$PATH
