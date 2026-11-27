@@ -18,10 +18,18 @@ Matrix4x4 MultiplyMatrix(const Matrix4x4& a, const Matrix4x4& b) {
 
 Matrix4x4 GetViewProjectionMatrix() {
     Matrix4x4 vp = {};
-    uintptr_t cam = GetGameCamera();
-    if (cam == 0) return vp;
-    Matrix4x4 view = ReadMemory<Matrix4x4>(cam + Offsets::Camera_ViewMatrix);
-    Matrix4x4 proj = ReadMemory<Matrix4x4>(cam + Offsets::Camera_ProjectionMatrix);
+    uintptr_t cam  = GetGameCamera();
+    uintptr_t base = GetUnityBase();
+    if (cam == 0 || base == 0) return vp;
+
+    using GetMatrix_t = void(*)(void* __this, Matrix4x4* retval);
+    auto getView = (GetMatrix_t)(base + RVAs::Camera_get_ViewMatrix_RVA);
+    auto getProj = (GetMatrix_t)(base + RVAs::Camera_get_ProjectionMatrix_RVA);
+
+    Matrix4x4 view = {}, proj = {};
+    getView((void*)cam, &view);
+    getProj((void*)cam, &proj);
+
     return MultiplyMatrix(proj, view);
 }
 
@@ -63,9 +71,10 @@ void EspThread() {
     while (g_Running.load(std::memory_order_acquire)) {
         Config cfg = GetConfig();
         if (!cfg.espEnabled) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
         }
-        
+
         uintptr_t localPlayer;
         std::vector<uintptr_t> localPlayers;
         {
@@ -76,48 +85,55 @@ void EspThread() {
 
         uintptr_t cam = GetGameCamera();
         if (cam == 0 || localPlayer == 0 || localPlayers.empty()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
         }
-        
+
         Matrix4x4 vp = GetViewProjectionMatrix();
-        if (vp.m[0][0] == 0) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue; }
+        if (vp.m[0][0] == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
+        uintptr_t base = GetUnityBase();
+        using GetInt_t = int32_t(*)(void* __this, const void* methodInfo);
+        auto getHP = (base != 0) ? (GetInt_t)(base + RVAs::Player_get_CurHP_RVA) : nullptr;
 
         std::vector<EspEntity> tempEntities;
 
         for (uintptr_t p : localPlayers) {
             if (p == localPlayer) continue;
-            
+
             uintptr_t bot_field = 0;
             bool isBot = false;
             if (!SafeAdd(p, Offsets::Player_IsClientBot, bot_field) || !ReadMemory<bool>(bot_field, isBot) || isBot) continue;
 
-            uintptr_t localTeam_field = 0;
+            uintptr_t myTeamField = 0;
             uint32_t myTeam = 0;
-            if (!SafeAdd(localPlayer, Offsets::Player_TeamModeID, localTeam_field) || !ReadMemory<uint32_t>(localTeam_field, myTeam)) continue;
+            if (!SafeAdd(localPlayer, Offsets::Player_TeamModeID, myTeamField) || !ReadMemory<uint32_t>(myTeamField, myTeam)) continue;
 
-            uintptr_t pTeam_field = 0;
+            uintptr_t pTeamField = 0;
             uint32_t enemyTeam = 0;
-            if (!SafeAdd(p, Offsets::Player_TeamModeID, pTeam_field) || !ReadMemory<uint32_t>(pTeam_field, enemyTeam)) continue;
-            
+            if (!SafeAdd(p, Offsets::Player_TeamModeID, pTeamField) || !ReadMemory<uint32_t>(pTeamField, enemyTeam)) continue;
+
             if (myTeam != 0 && myTeam == enemyTeam) continue;
 
             Vector3 pos = GetEntityPosition(p);
             if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
-            
+
             Vector3 head = pos; head.y += 1.65f;
             Vector2 hScreen, fScreen;
-            
-            if (WorldToScreen(head, hScreen, vp, g_ScreenWidth, g_ScreenHeight) && 
-                WorldToScreen(pos, fScreen, vp, g_ScreenWidth, g_ScreenHeight)) {
-                
+
+            if (WorldToScreen(head, hScreen, vp, g_ScreenWidth, g_ScreenHeight) &&
+                WorldToScreen(pos,  fScreen, vp, g_ScreenWidth, g_ScreenHeight)) {
+
                 if (hScreen.y < fScreen.y && (fScreen.y - hScreen.y) < 1000) {
                     EspEntity e;
-                    e.headPos = hScreen; e.footPos = fScreen;
-                    
-                    uintptr_t hp_field = 0;
-                    int hp = 0;
-                    if (SafeAdd(p, Offsets::Player_HP_Candidate, hp_field) && ReadMemory<int>(hp_field, hp)) {
-                        e.health = (float)hp;
+                    e.headPos = hScreen;
+                    e.footPos = fScreen;
+
+                    if (getHP) {
+                        e.health = (float)getHP((void*)p, nullptr);
                     } else {
                         e.health = 100.0f;
                     }
@@ -125,12 +141,12 @@ void EspThread() {
                 }
             }
         }
-        
-        { 
+
+        {
             std::lock_guard<std::mutex> espLk(g_EspMutex);
             g_EspEntities = std::move(tempEntities);
         }
-        
+
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
