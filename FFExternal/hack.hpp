@@ -10,6 +10,21 @@
 #include <mach-o/loader.h>
 #include "offset.hpp"
 
+// --- Safe Math Helpers ---
+inline bool SafeAdd(uintptr_t a, uintptr_t b, uintptr_t& out) {
+    if (b > UINTPTR_MAX - a) return false;
+    out = a + b; return true;
+}
+inline bool SafeSub(uintptr_t a, uintptr_t b, uintptr_t& out) {
+    if (b > a) return false;
+    out = a - b; return true;
+}
+inline bool SafeMul(uintptr_t a, uintptr_t b, uintptr_t& out) {
+    if (a != 0 && b > UINTPTR_MAX / a) return false;
+    out = a * b; return true;
+}
+// -------------------------
+
 void Log(const std::string& msg);
 
 struct Vector2 { float x, y; };
