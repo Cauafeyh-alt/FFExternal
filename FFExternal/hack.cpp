@@ -7,21 +7,23 @@ static bool s_teamDumpLogged = false;
 
 void HackLoop() {
     Log("=== HackLoop Iniciado ===");
-    { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: Iniciando Threads..."; }
     
     while (g_Running.load(std::memory_order_acquire)) {
+        // 1. Task Port
         mach_port_t tp = GetTaskPort();
         if (tp == MACH_PORT_NULL) {
+            { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: TaskPort NULL"; }
             tp = get_task_port("FreeFire");
             if (tp == MACH_PORT_NULL) {
-                { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: TaskPort NULL"; }
                 std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
             }
             SetTaskPort(tp);
         }
         
+        // 2. Unity Base
         uintptr_t ub = GetUnityBase();
         if (ub == 0) {
+            { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: Procurando UnityBase..."; }
             ub = FindUnityBase();
             if (ub == 0) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: UnityBase nao achado"; }
@@ -30,16 +32,19 @@ void HackLoop() {
             SetUnityBase(ub);
         }
         
+        // 3. MatchGame
         uintptr_t matchGame = GetStaticMatchGame();
         if (matchGame == 0) {
+            { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: Procurando MatchGame (Scan)..."; }
             matchGame = FindStaticMatchGame();
             if (matchGame == 0) {
                 { std::lock_guard<std::mutex> lk(g_PlayerMutex); g_DebugInfo = "Status: MatchGame nao achado"; }
-                std::this_thread::sleep_for(std::chrono::seconds(2)); continue; // AUMENTADO AQUI
+                std::this_thread::sleep_for(std::chrono::seconds(2)); continue;
             }
             SetStaticMatchGame(matchGame);
         }
 
+        // 4. Camera
         uintptr_t camMgr_field = 0;
         uintptr_t camMgr = 0;
         if (SafeAdd(matchGame, Offsets::MatchGame_CameraModeMgr, camMgr_field) && ReadMemory<uintptr_t>(camMgr_field, camMgr) && camMgr) {
@@ -50,6 +55,7 @@ void HackLoop() {
             }
         }
 
+        // 5. Players
         std::vector<uintptr_t> tempPlayers;
         uintptr_t tempLocal = 0;
 
