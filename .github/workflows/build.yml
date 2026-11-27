@@ -25,7 +25,6 @@ jobs:
         uses: Randomblock1/theos-action@v1
         with:
           theos-dir: 'theos'
-          theos-sdks: 'latest'
 
       - name: Build and Stage App
         env:
