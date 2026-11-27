@@ -17,19 +17,6 @@ char g_LogPath[512] = "";
 extern "C" void set_log_path(const char* path) { strncpy(g_LogPath, path, 511); g_LogPath[511] = 0; }
 void Log(const std::string& msg) { if(strlen(g_LogPath)) { FILE* f = fopen(g_LogPath, "a"); if(f){fprintf(f,"%s\n",msg.c_str());fclose(f);} } }
 
-inline bool SafeAdd(uintptr_t a, uintptr_t b, uintptr_t& out) {
-    if (b > UINTPTR_MAX - a) return false;
-    out = a + b; return true;
-}
-inline bool SafeSub(uintptr_t a, uintptr_t b, uintptr_t& out) {
-    if (b > a) return false;
-    out = a - b; return true;
-}
-inline bool SafeMul(uintptr_t a, uintptr_t b, uintptr_t& out) {
-    if (a != 0 && b > UINTPTR_MAX / a) return false;
-    out = a * b; return true;
-}
-
 static_assert(sizeof(vm_size_t) == sizeof(uintptr_t), "ARM64 only: vm_size_t must match uintptr_t");
 static_assert(sizeof(vm_address_t) == sizeof(uintptr_t), "ARM64 only: vm_address_t must match uintptr_t");
 
