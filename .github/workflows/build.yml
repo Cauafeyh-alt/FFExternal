@@ -11,14 +11,14 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make clang xz-utils zip unzip libplist-dev libssl-dev libxml2-dev
+          sudo apt-get install -y git make clang xz-utils zip unzip libplist-dev libssl-dev libxml2-dev libncurses5
 
       - name: Setup Theos & SDKs
         run: |
           THEOS_DIR="$GITHUB_WORKSPACE/theos"
           echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
 
-          # 1. Theos dentro do workspace
+          # 1. Theos
           git clone --recursive https://github.com/theos/theos.git $THEOS_DIR
 
           # 2. SDKs
@@ -27,15 +27,24 @@ jobs:
           unzip -q /tmp/sdks.zip -d /tmp/sdks
           mv /tmp/sdks/sdks-master/*.sdk $THEOS_DIR/sdks/
 
-          # 3. Toolchain Apple (ld64 incluso)
+          # 3. Toolchain Apple
           curl -sL https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o /tmp/swift.tar.xz
           tar -xf /tmp/swift.tar.xz -C $THEOS_DIR/toolchain/
 
-          # 4. Symlinks do clang (sem tocar no ld)
+          # 4. Symlinks do clang
           mkdir -p $THEOS_DIR/toolchain/linux/iphone/bin
           ln -sf /usr/bin/clang   $THEOS_DIR/toolchain/linux/iphone/bin/clang
           ln -sf /usr/bin/clang++ $THEOS_DIR/toolchain/linux/iphone/bin/clang++
           ln -sf /usr/bin/ar      $THEOS_DIR/toolchain/linux/iphone/bin/ar
+
+          # 5. CRIA o header que falta
+          cat > $THEOS_DIR/toolchain/linux/iphone/lib/swift/clang/include/__stddef_max_align_t.h << 'EOF'
+          #ifndef __STDDEF_MAX_ALIGN_T_H
+          #define __STDDEF_MAX_ALIGN_T_H
+          #include <stddef.h>
+          typedef long double max_align_t;
+          #endif
+          EOF
 
       - name: Compile ldid
         run: |
