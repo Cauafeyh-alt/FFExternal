@@ -20,20 +20,11 @@ jobs:
           sudo cp ./ldid /usr/local/bin/
           cd ..
           
-          # Baixa e configura o Theos no Linux
+          # Baixa e configura o Theos
           export THEOS=$HOME/theos
           git clone --recursive https://github.com/theos/theos.git $THEOS
           
-          # Baixa a Toolchain do Linux (Sbingner) e coloca no lugar certo
-          mkdir -p $THEOS/toolchain/linux/
-          cd $THEOS/toolchain/linux/
-          curl -L -o toolchain.tar.xz https://github.com/sbingner/xtoolchain/releases/download/1.0/linux-ios-toolchain.tar.xz
-          tar -xf toolchain.tar.xz
-          mv linux-ios-toolchain iphone
-          rm toolchain.tar.xz
-          cd $GITHUB_WORKSPACE
-
-          # Baixa os SDKs
+          # Baixa os SDKs do iOS
           mkdir -p $THEOS/sdks
           curl -L -o $THEOS/sdks/master.zip https://github.com/theos/sdks/archive/master.zip
           unzip -q $THEOS/sdks/master.zip -d $THEOS/sdks/
@@ -45,6 +36,9 @@ jobs:
           cd FFExternal
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
+          # Aponta pro clang do sistema e pro SDK da Apple baixado
+          export CC=clang
+          export CXX=clang++
           make stage
 
       - name: Package as Tipa
