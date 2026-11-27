@@ -20,12 +20,20 @@ jobs:
           export PATH=$THEOS/bin:$PATH
           make stage
 
-      - name: Package as Tipa
+      - name: Package as Tipa and Verify
         run: |
           cd FFExternal
           mkdir -p Payload
           cp -r .theos/_/Applications/FFExternal.app Payload/
           cp Info.plist Payload/FFExternal.app/Info.plist
+          ldid -SEntitlements.plist Payload/FFExternal.app/FFExternal
+          
+          codesign -d --entitlements :- Payload/FFExternal.app/FFExternal > ent.plist 2>/dev/null
+          if [ ! -s ent.plist ] || ! grep -q "task_for_pid-allow" ent.plist; then
+              echo "ERRO FATAL: Falta a permissao task_for_pid-allow!"
+              exit 1
+          fi
+          
           zip -qry FFExternal.tipa Payload
 
       - name: Upload Tipa
