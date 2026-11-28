@@ -1,0 +1,72 @@
+name: Build External Tipa
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git make clang xz-utils zip unzip libplist-dev libssl-dev libxml2-dev
+
+      - name: Setup Theos & SDKs (Manual, no API)
+        run: |
+          export THEOS="$GITHUB_WORKSPACE/theos"
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+
+          # 1. Theos core
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+
+          # 2. SDKs (direto do repo, sem api.github.com)
+          mkdir -p $THEOS/sdks
+          git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks
+          mv /tmp/sdks/*.sdk $THEOS/sdks/
+
+          # 3. Toolchain L1ghtmann (URL correta: latest/download, x86_64)
+          curl -L -o /tmp/iOSToolchain.tar.xz https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz
+          tar -xJvf /tmp/iOSToolchain.tar.xz -C $THEOS/toolchain/
+
+          # 4. Verifica se o clang e o header estão no lugar
+          export PATH=$THEOS/toolchain/linux/iphone/bin:$PATH
+          which clang
+          ls "$(clang -print-resource-dir)/include/__stddef_max_align_t.h"
+
+      - name: Compile ldid
+        run: |
+          git clone https://github.com/ProcursusTeam/ldid.git
+          cd ldid
+          make
+          sudo cp ./ldid /usr/local/bin/
+          cd ..
+
+      - name: Build and Stage App
+        run: |
+          cd FFExternal
+          export PATH=$THEOS/bin:$PATH
+          make stage
+
+      - name: Package as Tipa
+        run: |
+          cd FFExternal
+          mkdir -p Payload
+          cp -r .theos/_/Applications/FFExternal.app Payload/
+          cp Info.plist Payload/FFExternal.app/Info.plist
+
+          ldid -SEntitlements.plist Payload/FFExternal.app/FFExternal
+
+          if ! ldid -e Payload/FFExternal.app/FFExternal | grep -q "task_for_pid-allow"; then
+              echo "ERRO FATAL: Falta a permissao task_for_pid-allow!"
+              exit 1
+          fi
+
+          zip -qry FFExternal.tipa Payload
+
+      - name: Upload Tipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFExternal-Tipa
+          path: FFExternal/FFExternal.tipa
