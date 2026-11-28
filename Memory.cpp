@@ -271,178 +271,146 @@ uintptr_t FindStaticMatchGame() {
         SetFacadeCache(0, 0);
     }
 
-    uintptr_t string_addr = 0;
-    const char* target_name = "GameFacade";
-    {
-        std::vector<std::pair<uintptr_t, uintptr_t>> regions;
-        CollectRegions(tp, regions);
+    std::vector<std::pair<uintptr_t, uintptr_t>> regions;
+    CollectRegions(tp, regions);
 
-        char log_buf[128];
-        snprintf(log_buf, sizeof(log_buf), "[SCAN] Coletou %lu regioes.", regions.size());
-        Log(log_buf);
-
-        const uintptr_t CHUNK = 4ULL * 1024 * 1024;
-        const uintptr_t OVERLAP = 15;
-        uintptr_t READ_SIZE;
-        if (!SafeAdd(CHUNK, OVERLAP, READ_SIZE)) return 0;
-
-        for (auto& reg : regions) {
-            uintptr_t reg_end;
-            if (!SafeAdd(reg.first, reg.second, reg_end)) continue;
-
-            char* buf = (char*)malloc(READ_SIZE);
-            if (!buf) continue;
-
-            uintptr_t address = reg.first;
-            while (address < reg_end) {
-                uintptr_t remaining = reg_end - address;
-                uintptr_t want = (remaining > READ_SIZE) ? READ_SIZE : remaining;
-
-                vm_address_t vm_addr;
-                vm_size_t vm_size;
-                if (!ToVmAddress(address, vm_addr) || !ToVmSize(want, vm_size)) {
-                    uintptr_t next;
-                    if (!SafeAdd(address, CHUNK, next)) break;
-                    address = next;
-                    continue;
-                }
-
-                vm_size_t got = vm_size;
-                kern_return_t kr = vm_read_overwrite(tp, vm_addr, vm_size, (vm_address_t)buf, &got);
-
-                if (kr == KERN_SUCCESS && (uintptr_t)got == want && got > OVERLAP) {
-                    for (vm_size_t i = 0; i < got - OVERLAP; i++) {
-                        if ((memcmp(buf + i, "GameFacade", 10) == 0 && buf[i + 10] == '\0') ||
-                            (memcmp(buf + i, "MatchGame", 9) == 0 && buf[i + 9] == '\0')) {
-                            if (!SafeAdd(address, i, string_addr)) string_addr = 0;
-                            if (memcmp(buf + i, "MatchGame", 9) == 0) target_name = "MatchGame";
-                            break;
-                        }
-                    }
-                }
-                if (string_addr) break;
-
-                uintptr_t next;
-                if (!SafeAdd(address, CHUNK, next)) break;
-                address = next;
-            }
-            free(buf);
-            if (string_addr) break;
-        }
-    }
-
-    if (string_addr == 0) {
-        Log("[-] Falhou: String 'GameFacade' ou 'MatchGame' nao encontrada na memoria.");
-        return 0;
-    }
-
-    char s_log[128];
-    snprintf(s_log, sizeof(s_log), "[SCAN] String '%s' achada em 0x%" PRIxPTR, target_name, string_addr);
-    Log(s_log);
+    char log_buf[128];
+    snprintf(log_buf, sizeof(log_buf), "[SCAN] Coletou %lu regioes.", regions.size());
+    Log(log_buf);
 
     uintptr_t class_ptr = 0;
     uintptr_t static_fields = 0;
-    {
-        std::vector<std::pair<uintptr_t, uintptr_t>> regions;
-        CollectRegions(tp, regions);
 
-        const uintptr_t CHUNK = 4ULL * 1024 * 1024;
-        const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00, 0x18, 0x20};
-        const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98, 0xE0, 0xE8, 0x88, 0x80, 0xD0, 0x70, 0x78};
+    const uintptr_t CHUNK = 4ULL * 1024 * 1024;
+    const uintptr_t OVERLAP = 15;
+    uintptr_t READ_SIZE;
+    if (!SafeAdd(CHUNK, OVERLAP, READ_SIZE)) return 0;
 
-        for (auto& reg : regions) {
-            uintptr_t reg_end;
-            if (!SafeAdd(reg.first, reg.second, reg_end)) continue;
+    for (auto& reg : regions) {
+        uintptr_t reg_end;
+        if (!SafeAdd(reg.first, reg.second, reg_end)) continue;
 
-            uintptr_t* buf = (uintptr_t*)malloc(CHUNK);
-            if (!buf) continue;
+        char* buf = (char*)malloc(READ_SIZE);
+        if (!buf) continue;
 
-            uintptr_t address = reg.first;
-            while (address < reg_end) {
-                uintptr_t remaining = reg_end - address;
-                uintptr_t want = (remaining > CHUNK) ? CHUNK : remaining;
+        uintptr_t address = reg.first;
+        while (address < reg_end) {
+            uintptr_t remaining = reg_end - address;
+            uintptr_t want = (remaining > READ_SIZE) ? READ_SIZE : remaining;
 
-                vm_address_t vm_addr;
-                vm_size_t vm_size;
-                if (!ToVmAddress(address, vm_addr) || !ToVmSize(want, vm_size)) {
-                    uintptr_t next;
-                    if (!SafeAdd(address, CHUNK, next)) break;
-                    address = next;
-                    continue;
-                }
-
-                vm_size_t got = vm_size;
-                kern_return_t kr = vm_read_overwrite(tp, vm_addr, vm_size, (vm_address_t)buf, &got);
-
-                if (kr != KERN_SUCCESS || (uintptr_t)got != want) {
-                    uintptr_t next;
-                    if (!SafeAdd(address, CHUNK, next)) break;
-                    address = next;
-                    continue;
-                }
-
-                for (size_t i = 0; i < got / sizeof(uintptr_t) && !class_ptr; i++) {
-                    if (buf[i] != string_addr) continue;
-
-                    uintptr_t i_bytes, entry_addr;
-                    if (!SafeMul((uintptr_t)i, (uintptr_t)sizeof(uintptr_t), i_bytes)) continue;
-                    if (!SafeAdd(address, i_bytes, entry_addr)) continue;
-
-                    for (uintptr_t name_off : name_offsets) {
-                        if (entry_addr < name_off) continue;
-                        uintptr_t cand = entry_addr - name_off;
-
-                        uintptr_t cand_name_field, cand_name_ptr;
-                        if (!SafeAdd(cand, 0x10, cand_name_field)) continue;
-                        if (!ReadMemory<uintptr_t>(cand_name_field, cand_name_ptr)) continue;
-                        if (cand_name_ptr != string_addr) continue;
-
-                        for (uintptr_t sf_off : static_offsets) {
-                            uintptr_t sf_field, sf;
-                            if (!SafeAdd(cand, sf_off, sf_field)) continue;
-                            if (!ReadMemory<uintptr_t>(sf_field, sf)) continue;
-                            if (!IsAddressValid(sf, VM_PROT_READ)) continue;
-                            class_ptr = cand;
-                            static_fields = sf;
-                            break;
-                        }
-                        if (class_ptr) break;
-                    }
-                }
-                if (class_ptr) break;
-
+            vm_address_t vm_addr;
+            vm_size_t vm_size;
+            if (!ToVmAddress(address, vm_addr) || !ToVmSize(want, vm_size)) {
                 uintptr_t next;
                 if (!SafeAdd(address, CHUNK, next)) break;
                 address = next;
+                continue;
             }
-            free(buf);
-            if (class_ptr) break;
+
+            vm_size_t got = vm_size;
+            kern_return_t kr = vm_read_overwrite(tp, vm_addr, vm_size, (vm_address_t)buf, &got);
+
+            if (kr == KERN_SUCCESS && (uintptr_t)got == want && got > OVERLAP) {
+                for (vm_size_t i = 0; i < got - OVERLAP; i++) {
+                    bool is_match = (memcmp(buf + i, "MatchGame", 9) == 0 && buf[i + 9] == '\0');
+                    bool is_facade = (memcmp(buf + i, "GameFacade", 10) == 0 && buf[i + 10] == '\0');
+
+                    if (is_match || is_facade) {
+                        uintptr_t string_addr;
+                        if (!SafeAdd(address, i, string_addr)) continue;
+
+                        for (auto& reg2 : regions) {
+                            uintptr_t reg2_end;
+                            if (!SafeAdd(reg2.first, reg2.second, reg2_end)) continue;
+
+                            uintptr_t* buf2 = (uintptr_t*)malloc(CHUNK);
+                            if (!buf2) continue;
+
+                            uintptr_t addr2 = reg2.first;
+                            while (addr2 < reg2_end) {
+                                uintptr_t rem2 = reg2_end - addr2;
+                                uintptr_t want2 = (rem2 > CHUNK) ? CHUNK : rem2;
+
+                                vm_address_t vm_addr2;
+                                vm_size_t vm_size2;
+                                if (!ToVmAddress(addr2, vm_addr2) || !ToVmSize(want2, vm_size2)) {
+                                    uintptr_t next;
+                                    if (!SafeAdd(addr2, CHUNK, next)) break;
+                                    addr2 = next;
+                                    continue;
+                                }
+
+                                vm_size_t got2 = vm_size2;
+                                if (vm_read_overwrite(tp, vm_addr2, vm_size2, (vm_address_t)buf2, &got2) == KERN_SUCCESS && (uintptr_t)got2 == want2) {
+                                    for (size_t j = 0; j < got2 / sizeof(uintptr_t); j++) {
+                                        if (buf2[j] == string_addr) {
+                                            uintptr_t ptr_loc;
+                                            if (!SafeAdd(addr2, j * sizeof(uintptr_t), ptr_loc)) continue;
+
+                                            for (int64_t off = -0x40; off <= 0x20; off += 8) {
+                                                uintptr_t cand = 0;
+                                                if (off < 0) {
+                                                    if (!SafeSub(ptr_loc, (uintptr_t)(-off), cand)) continue;
+                                                } else {
+                                                    if (!SafeAdd(ptr_loc, (uintptr_t)off, cand)) continue;
+                                                }
+
+                                                uintptr_t name_field, name_ptr;
+                                                if (!SafeAdd(cand, 0x10, name_field)) continue;
+                                                if (!ReadMemory<uintptr_t>(name_field, name_ptr)) continue;
+                                                if (name_ptr != string_addr) continue;
+
+                                                const uintptr_t sf_offsets[] = {
+                                                    0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98, 0xE0, 0xE8, 
+                                                    0x88, 0x80, 0xD0, 0x70, 0x78, 0xF0, 0xF8, 0x100,
+                                                    0x108, 0x110, 0x118, 0x120, 0x128, 0x130, 0x138
+                                                };
+                                                
+                                                for (uintptr_t sf_off : sf_offsets) {
+                                                    uintptr_t sf_field, sf;
+                                                    if (!SafeAdd(cand, sf_off, sf_field)) continue;
+                                                    if (!ReadMemory<uintptr_t>(sf_field, sf)) continue;
+                                                    if (!IsAddressValid(sf, VM_PROT_READ)) continue;
+
+                                                    uintptr_t mg_field, matchGame;
+                                                    if (!SafeAdd(sf, 0x8, mg_field)) continue;
+                                                    if (!ReadMemory<uintptr_t>(mg_field, matchGame) || matchGame == 0) continue;
+
+                                                    uintptr_t objKlass = 0;
+                                                    if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == cand) {
+                                                        class_ptr = cand;
+                                                        static_fields = sf;
+                                                        
+                                                        SetFacadeCache(static_fields, class_ptr);
+                                                        char hex_buf[128];
+                                                        snprintf(hex_buf, sizeof(hex_buf), "[+] MatchGame Encontrado: 0x%" PRIxPTR " (klass 0x%" PRIxPTR ")", matchGame, cand);
+                                                        Log(hex_buf);
+                                                        
+                                                        free(buf2);
+                                                        free(buf);
+                                                        return matchGame;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                uintptr_t next2;
+                                if (!SafeAdd(addr2, CHUNK, next2)) break;
+                                addr2 = next2;
+                            }
+                            free(buf2);
+                        }
+                    }
+                }
+            }
+            uintptr_t next;
+            if (!SafeAdd(address, CHUNK, next)) break;
+            address = next;
         }
+        free(buf);
     }
 
-    if (class_ptr == 0) {
-        Log("[-] Falhou: Nenhum Il2CppClass apontando pra string foi encontrado (offsets errados?).");
-        return 0;
-    }
-
-    uintptr_t mg_field, matchGame;
-    if (!SafeAdd(static_fields, 0x8, mg_field)) return 0;
-    if (!ReadMemory<uintptr_t>(mg_field, matchGame) || matchGame == 0) {
-        Log("[-] Falhou: static_fields + 0x8 deu null.");
-        return 0;
-    }
-
-    uintptr_t objKlass = 0;
-    if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == class_ptr) {
-        SetFacadeCache(static_fields, class_ptr);
-
-        char hex_buf[64];
-        snprintf(hex_buf, sizeof(hex_buf), "0x%" PRIxPTR, matchGame);
-        Log("[+] MatchGame Encontrado: " + std::string(hex_buf));
-
-        return matchGame;
-    } else {
-        Log("[-] Falhou: O objeto achado nao e um MatchGame (klass mismatch).");
-    }
+    Log("[-] Falhou: Nenhum MatchGame valido (com Il2CppClass e static_fields) foi encontrado.");
     return 0;
 }
