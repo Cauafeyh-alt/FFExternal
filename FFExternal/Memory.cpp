@@ -61,7 +61,7 @@ bool WalkRegion(mach_port_t tp, uintptr_t& address, RegionInfo& out) {
     if (object_name != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object_name);
 
     if (kr != KERN_SUCCESS || sz == 0) {
-        address += 0x100000; 
+        address += 0x100000;
         if (address == 0) address = 1;
         return false;
     }
@@ -106,7 +106,7 @@ mach_port_t get_task_port(const char* process_name) {
 bool IsAddressValid(uintptr_t addr, vm_prot_t required_prot) {
     mach_port_t tp = GetTaskPort();
     if (tp == MACH_PORT_NULL || addr == 0) return false;
-    
+
     uintptr_t probe_addr = addr;
     RegionInfo ri;
     if (!WalkRegion(tp, probe_addr, ri)) return false;
@@ -122,7 +122,7 @@ uintptr_t FindUnityBase() {
     while (address < 0x400000000ULL) {
         RegionInfo ri;
         if (!WalkRegion(tp, address, ri)) continue;
-        
+
         if ((ri.protection & VM_PROT_READ) == VM_PROT_READ) {
             struct mach_header_64 header;
             vm_address_t vm_addr;
@@ -130,8 +130,8 @@ uintptr_t FindUnityBase() {
 
             vm_size_t readSize = sizeof(header);
             kern_return_t kr = vm_read_overwrite(tp, vm_addr, sizeof(header), (vm_address_t)&header, &readSize);
-            
-            if (kr == KERN_SUCCESS && readSize == sizeof(header) && 
+
+            if (kr == KERN_SUCCESS && readSize == sizeof(header) &&
                 header.magic == MH_MAGIC_64 && header.filetype == MH_DYLIB) {
 
                 if (header.ncmds == 0 || header.ncmds > header.sizeofcmds / 4) goto next_region;
@@ -143,13 +143,13 @@ uintptr_t FindUnityBase() {
 
                     uintptr_t addr_cmds;
                     if (!SafeAdd(ri.base, sizeof(header), addr_cmds)) { free(cmds); break; }
-                    
+
                     vm_address_t vm_cmds;
                     if (!ToVmAddress(addr_cmds, vm_cmds)) { free(cmds); break; }
 
                     vm_size_t actual_read = cmdsSize;
                     kr = vm_read_overwrite(tp, vm_cmds, cmdsSize, (vm_address_t)cmds, &actual_read);
-                    
+
                     if (kr == KERN_SUCCESS && actual_read == cmdsSize) {
                         char* ptr = cmds;
                         uintptr_t cmds_base = (uintptr_t)cmds;
@@ -202,8 +202,8 @@ uintptr_t FindUnityBase() {
                             parsed_cmds++;
                         }
 
-                        if (is_unity && has_uuid && text_vmsize > 0 
-                            && parsed_cmds == header.ncmds 
+                        if (is_unity && has_uuid && text_vmsize > 0
+                            && parsed_cmds == header.ncmds
                             && accumulated == (uintptr_t)header.sizeofcmds) {
                             uintptr_t base;
                             if (SafeSub(ri.base, (uintptr_t)text_vmaddr, base)) {
@@ -250,18 +250,9 @@ void CollectRegions(mach_port_t tp, std::vector<std::pair<uintptr_t, uintptr_t>>
 }
 
 void DumpCameraOffsets() {
-    uintptr_t cam = GetGameCamera();
-    if (cam == 0) return;
-    Matrix4x4 view = {}, proj = {};
-    if (!ReadMemory<Matrix4x4>(cam + Offsets::Camera_ViewMatrix, view)) return;
-    if (!ReadMemory<Matrix4x4>(cam + Offsets::Camera_ProjectionMatrix, proj)) return;
-    char buf[512];
-    snprintf(buf, sizeof(buf), "[DUMP] View[0][0]=%f View[1][1]=%f View[2][2]=%f View[3][0]=%f", 
-             view.m[0][0], view.m[1][1], view.m[2][2], view.m[3][0]);
-    Log(buf);
-    snprintf(buf, sizeof(buf), "[DUMP] Proj[0][0]=%f Proj[1][1]=%f Proj[2][2]=%f Proj[2][3]=%f Proj[3][2]=%f", 
-             proj.m[0][0], proj.m[1][1], proj.m[2][2], proj.m[2][3], proj.m[3][2]);
-    Log(buf);
+    // Diagnóstico antigo removido.
+    // Matrizes de câmera são getters (RVAs::Camera_get_ViewMatrix_RVA / ProjectionMatrix_RVA),
+    // não campos. Nada a dumpar por leitura de memória de struct.
 }
 
 uintptr_t FindStaticMatchGame() {
@@ -285,7 +276,7 @@ uintptr_t FindStaticMatchGame() {
     {
         std::vector<std::pair<uintptr_t, uintptr_t>> regions;
         CollectRegions(tp, regions);
-        
+
         char log_buf[128];
         snprintf(log_buf, sizeof(log_buf), "[SCAN] Coletou %lu regioes.", regions.size());
         Log(log_buf);
@@ -306,7 +297,7 @@ uintptr_t FindStaticMatchGame() {
             while (address < reg_end) {
                 uintptr_t remaining = reg_end - address;
                 uintptr_t want = (remaining > READ_SIZE) ? READ_SIZE : remaining;
-                
+
                 vm_address_t vm_addr;
                 vm_size_t vm_size;
                 if (!ToVmAddress(address, vm_addr) || !ToVmSize(want, vm_size)) {
@@ -318,10 +309,9 @@ uintptr_t FindStaticMatchGame() {
 
                 vm_size_t got = vm_size;
                 kern_return_t kr = vm_read_overwrite(tp, vm_addr, vm_size, (vm_address_t)buf, &got);
-                
+
                 if (kr == KERN_SUCCESS && (uintptr_t)got == want && got > OVERLAP) {
                     for (vm_size_t i = 0; i < got - OVERLAP; i++) {
-                        // Tenta "GameFacade" ou "MatchGame"
                         if ((memcmp(buf + i, "GameFacade", 10) == 0 && buf[i + 10] == '\0') ||
                             (memcmp(buf + i, "MatchGame", 9) == 0 && buf[i + 9] == '\0')) {
                             if (!SafeAdd(address, i, string_addr)) string_addr = 0;
@@ -340,12 +330,12 @@ uintptr_t FindStaticMatchGame() {
             if (string_addr) break;
         }
     }
-    
+
     if (string_addr == 0) {
         Log("[-] Falhou: String 'GameFacade' ou 'MatchGame' nao encontrada na memoria.");
         return 0;
     }
-    
+
     char s_log[128];
     snprintf(s_log, sizeof(s_log), "[SCAN] String '%s' achada em 0x%" PRIxPTR, target_name, string_addr);
     Log(s_log);
@@ -357,7 +347,6 @@ uintptr_t FindStaticMatchGame() {
         CollectRegions(tp, regions);
 
         const uintptr_t CHUNK = 4ULL * 1024 * 1024;
-        // Offsets expandidos para diferentes versoes do Unity/Il2Cpp
         const uintptr_t name_offsets[]   = {0x10, 0x08, 0x00, 0x18, 0x20};
         const uintptr_t static_offsets[] = {0xB8, 0xC0, 0xA8, 0xB0, 0x90, 0x98, 0xE0, 0xE8, 0x88, 0x80, 0xD0, 0x70, 0x78};
 
@@ -372,7 +361,7 @@ uintptr_t FindStaticMatchGame() {
             while (address < reg_end) {
                 uintptr_t remaining = reg_end - address;
                 uintptr_t want = (remaining > CHUNK) ? CHUNK : remaining;
-                
+
                 vm_address_t vm_addr;
                 vm_size_t vm_size;
                 if (!ToVmAddress(address, vm_addr) || !ToVmSize(want, vm_size)) {
@@ -384,7 +373,7 @@ uintptr_t FindStaticMatchGame() {
 
                 vm_size_t got = vm_size;
                 kern_return_t kr = vm_read_overwrite(tp, vm_addr, vm_size, (vm_address_t)buf, &got);
-                
+
                 if (kr != KERN_SUCCESS || (uintptr_t)got != want) {
                     uintptr_t next;
                     if (!SafeAdd(address, CHUNK, next)) break;
@@ -430,7 +419,7 @@ uintptr_t FindStaticMatchGame() {
             if (class_ptr) break;
         }
     }
-    
+
     if (class_ptr == 0) {
         Log("[-] Falhou: Nenhum Il2CppClass apontando pra string foi encontrado (offsets errados?).");
         return 0;
@@ -446,11 +435,11 @@ uintptr_t FindStaticMatchGame() {
     uintptr_t objKlass = 0;
     if (ReadMemory<uintptr_t>(matchGame, objKlass) && objKlass == class_ptr) {
         SetFacadeCache(static_fields, class_ptr);
-        
+
         char hex_buf[64];
         snprintf(hex_buf, sizeof(hex_buf), "0x%" PRIxPTR, matchGame);
         Log("[+] MatchGame Encontrado: " + std::string(hex_buf));
-        
+
         return matchGame;
     } else {
         Log("[-] Falhou: O objeto achado nao e um MatchGame (klass mismatch).");
