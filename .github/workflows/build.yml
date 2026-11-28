@@ -45,13 +45,11 @@ jobs:
 
       - name: Build and Stage App
         run: |
-          cd FFExternal
           export PATH=$THEOS/bin:$PATH
           make stage
 
       - name: Package as Tipa
         run: |
-          cd FFExternal
           mkdir -p Payload
           cp -r .theos/_/Applications/FFExternal.app Payload/
           cp Info.plist Payload/FFExternal.app/Info.plist
@@ -69,4 +67,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FFExternal-Tipa
-          path: FFExternal/FFExternal.tipa
+          path: FFExternal.tipa
